@@ -1,12 +1,16 @@
 import {
   storyProjectSchema,
+  nodeColorTokens,
   type ChoiceSelection,
+  type NodeColorToken,
   type StoryChoice,
   type StoryNode,
   type StoryProject
 } from "../types/story";
+import { normalizeNodeTag, sortNodeTags } from "./nodeTags";
 
 const DEFAULT_PROJECT_TITLE = "Untitled Story";
+const DEFAULT_NODE_COLOR: NodeColorToken = "sand";
 
 function createId(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
@@ -27,6 +31,8 @@ export function createNode(position = { x: 80, y: 80 }): StoryNode {
     title: "New Node",
     body: "",
     position,
+    tags: [],
+    colorToken: DEFAULT_NODE_COLOR,
     choices: []
   };
 }
@@ -35,7 +41,9 @@ export function createEmptyProject(): StoryProject {
   const startNode = {
     ...createNode({ x: 120, y: 120 }),
     title: "Start",
-    body: "Write your opening scene here."
+    body: "Write your opening scene here.",
+    tags: ["Start"],
+    colorToken: "amber" as NodeColorToken
   };
 
   return {
@@ -52,8 +60,29 @@ export function duplicateProject(project: StoryProject): StoryProject {
   return JSON.parse(JSON.stringify(project)) as StoryProject;
 }
 
+function normalizeNode(node: StoryNode): StoryNode {
+  const uniqueTags = new Set<string>();
+
+  for (const rawTag of node.tags ?? []) {
+    const normalizedTag = normalizeNodeTag(rawTag);
+    if (normalizedTag) {
+      uniqueTags.add(normalizedTag);
+    }
+  }
+
+  return {
+    ...node,
+    tags: sortNodeTags([...uniqueTags]),
+    colorToken: nodeColorTokens.includes(node.colorToken) ? node.colorToken : DEFAULT_NODE_COLOR
+  };
+}
+
 export function validateStoryProject(input: unknown): StoryProject {
-  const project = storyProjectSchema.parse(input);
+  const parsedProject = storyProjectSchema.parse(input);
+  const project = {
+    ...parsedProject,
+    nodes: parsedProject.nodes.map((node) => normalizeNode(node))
+  };
   const nodeIds = new Set(project.nodes.map((node) => node.id));
 
   if (project.nodes.length === 0) {
@@ -84,6 +113,22 @@ export function validateStoryProject(input: unknown): StoryProject {
         );
       }
     }
+  }
+
+  const startTagNodes = project.nodes.filter((node) => node.tags.includes("Start"));
+
+  if (startTagNodes.length > 1) {
+    throw new Error('Only one node can use the "Start" tag.');
+  }
+
+  if (startTagNodes.length === 1) {
+    project.metadata.startNodeId = startTagNodes[0].id;
+  } else {
+    project.nodes = project.nodes.map((node) =>
+      node.id === project.metadata.startNodeId
+        ? { ...node, tags: sortNodeTags([...node.tags, "Start"]) }
+        : node
+    );
   }
 
   return project;
@@ -117,11 +162,22 @@ export function exportValidationErrors(project: StoryProject): string[] {
     errors.push("Start node must reference an existing node.");
   }
 
+  const startTaggedNodes = project.nodes.filter((node) => node.tags.includes("Start"));
+  if (startTaggedNodes.length !== 1) {
+    errors.push('Exactly one node must have the "Start" tag.');
+  } else if (startTaggedNodes[0].id !== project.metadata.startNodeId) {
+    errors.push('The "Start" tag must match metadata.startNodeId.');
+  }
+
   for (const node of project.nodes) {
     if (nodeIds.has(node.id)) {
       errors.push(`Duplicate node id: ${node.id}`);
     }
     nodeIds.add(node.id);
+
+    if (!nodeColorTokens.includes(node.colorToken)) {
+      errors.push(`Invalid node color in node ${node.id}: ${node.colorToken}`);
+    }
 
     const choiceIds = new Set<string>();
 

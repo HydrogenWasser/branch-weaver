@@ -12,6 +12,8 @@ export const exampleProject: StoryProject = {
       title: "Awakening",
       body: "You wake in a silent room. The air smells faintly of rain.",
       position: { x: 100, y: 120 },
+      tags: ["Start", "Core"],
+      colorToken: "amber",
       choices: [
         {
           id: "choice_door",
@@ -30,6 +32,8 @@ export const exampleProject: StoryProject = {
       title: "The Door",
       body: "The handle turns halfway, then stops against a hidden lock.",
       position: { x: 460, y: 40 },
+      tags: ["Core"],
+      colorToken: "clay",
       choices: [
         {
           id: "choice_return",
@@ -43,6 +47,8 @@ export const exampleProject: StoryProject = {
       title: "The Window",
       body: "The window is painted shut, but a note is pinned beneath the frame.",
       position: { x: 460, y: 250 },
+      tags: ["Core"],
+      colorToken: "slate",
       choices: [
         {
           id: "choice_note",
@@ -56,6 +62,8 @@ export const exampleProject: StoryProject = {
       title: "The Note",
       body: "It says: 'The key is where the light never reaches.'",
       position: { x: 820, y: 250 },
+      tags: ["End"],
+      colorToken: "rosewood",
       choices: [
         {
           id: "choice_restart",

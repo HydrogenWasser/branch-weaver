@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
+  applyNodeChanges,
   Background,
   MarkerType,
   MiniMap,
   type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type OnSelectionChangeParams,
   type ReactFlowInstance
 } from "reactflow";
 import "reactflow/dist/style.css";
+import { getNodeMiniMapColor } from "../lib/nodeAppearance";
 import { useEditorStore } from "../store/editorStore";
-import StoryNodeCard from "./StoryNodeCard";
+import StoryNodeCard, { type StoryNodeData } from "./StoryNodeCard";
 
 type CanvasGraphProps = {
   fitRequest: number;
@@ -19,6 +22,7 @@ type CanvasGraphProps = {
   focusNodeId: string | null;
   highlightedNodeIds: Set<string>;
   onFitReady: (fit: () => void) => void;
+  onRequestFocusNode: (nodeId: string) => void;
 };
 
 const nodeTypes = {
@@ -39,28 +43,70 @@ export default function CanvasGraph({
   focusRequest,
   focusNodeId,
   highlightedNodeIds,
-  onFitReady
+  onFitReady,
+  onRequestFocusNode
 }: CanvasGraphProps) {
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
   const project = useEditorStore((state) => state.project);
+  const selection = useEditorStore((state) => state.selection);
   const setSelection = useEditorStore((state) => state.setSelection);
   const moveNode = useEditorStore((state) => state.moveNode);
   const connectChoice = useEditorStore((state) => state.connectChoice);
+  const handleNodeBodyClick = useCallback((nodeId: string) => {
+    setSelection({ type: "node", nodeId });
+  }, [setSelection]);
+  const handleNodeBodyDoubleClick = useCallback((nodeId: string) => {
+    onRequestFocusNode(nodeId);
+  }, [onRequestFocusNode]);
+  const handleChoiceClick = useCallback((nodeId: string, choiceId: string) => {
+    setSelection({ type: "choice", nodeId, choiceId });
+  }, [setSelection]);
+  const handleChoiceDoubleClick = useCallback((
+    nodeId: string,
+    choiceId: string,
+    targetNodeId: string | null
+  ) => {
+    if (!targetNodeId) {
+      setSelection({ type: "choice", nodeId, choiceId });
+      return;
+    }
 
-  const nodes = useMemo<Node[]>(
+    onRequestFocusNode(targetNodeId);
+  }, [onRequestFocusNode, setSelection]);
+
+  const projectNodes = useMemo<Node[]>(
     () =>
       project.nodes.map((storyNode) => ({
         id: storyNode.id,
         type: "storyNode",
         position: storyNode.position,
+        selected: selection?.type === "node" && selection.nodeId === storyNode.id,
         data: {
           storyNode,
-          isStartNode: project.metadata.startNodeId === storyNode.id,
-          isSearchMatch: highlightedNodeIds.has(storyNode.id)
-        }
+          isSearchMatch: highlightedNodeIds.has(storyNode.id),
+          selectedChoiceId:
+            selection?.type === "choice" && selection.nodeId === storyNode.id ? selection.choiceId : null,
+          onNodeBodyClick: handleNodeBodyClick,
+          onNodeBodyDoubleClick: handleNodeBodyDoubleClick,
+          onChoiceClick: handleChoiceClick,
+          onChoiceDoubleClick: handleChoiceDoubleClick
+        } satisfies StoryNodeData
       })),
-    [highlightedNodeIds, project]
+    [
+      handleChoiceClick,
+      handleChoiceDoubleClick,
+      handleNodeBodyClick,
+      handleNodeBodyDoubleClick,
+      highlightedNodeIds,
+      project,
+      selection
+    ]
   );
+  const [canvasNodes, setCanvasNodes] = useState<Node[]>(projectNodes);
+
+  useEffect(() => {
+    setCanvasNodes(projectNodes);
+  }, [projectNodes]);
 
   const edges = useMemo<Edge[]>(
     () =>
@@ -72,10 +118,14 @@ export default function CanvasGraph({
             source: storyNode.id,
             sourceHandle: choice.id,
             target: choice.targetNodeId!,
+            selected:
+              selection?.type === "choice" &&
+              selection.nodeId === storyNode.id &&
+              selection.choiceId === choice.id,
             markerEnd: { type: MarkerType.ArrowClosed }
           }))
       ),
-    [project]
+    [project, selection]
   );
 
   const fitGraph = useCallback(() => {
@@ -140,8 +190,6 @@ export default function CanvasGraph({
         return;
       }
     }
-
-    setSelection(null);
   }, [setSelection]);
 
   const handlePaneClick = useCallback(() => {
@@ -152,6 +200,10 @@ export default function CanvasGraph({
     moveNode(node.id, node.position);
   }, [moveNode]);
 
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+  }, []);
+
   const handleEdgeClick = useCallback((_: unknown, edge: Edge) => {
     const parsed = parseEdgeId(edge.id);
     if (parsed) {
@@ -159,21 +211,23 @@ export default function CanvasGraph({
     }
   }, [setSelection]);
 
+  const handleEdgeDoubleClick = useCallback((_: unknown, edge: Edge) => {
+    if (edge.target) {
+      onRequestFocusNode(edge.target);
+    }
+  }, [onRequestFocusNode]);
+
   const miniMapNodeColor = useCallback((node: Node) => {
     if (highlightedNodeIds.has(node.id)) {
       return "#d68e3f";
     }
 
-    if (project.metadata.startNodeId === node.id) {
-      return "#e0b34a";
-    }
-
-    return "#b9a794";
-  }, [highlightedNodeIds, project.metadata.startNodeId]);
+    return getNodeMiniMapColor(node.data.storyNode.colorToken);
+  }, [highlightedNodeIds]);
 
   return (
     <ReactFlow
-      nodes={nodes}
+      nodes={canvasNodes}
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
@@ -181,10 +235,12 @@ export default function CanvasGraph({
       multiSelectionKeyCode={["Control", "Meta"]}
       onInit={handleInit}
       onConnect={handleConnect}
+      onNodesChange={handleNodesChange}
       onPaneClick={handlePaneClick}
       onSelectionChange={handleSelectionChange}
       onNodeDragStop={handleNodeDragStop}
       onEdgeClick={handleEdgeClick}
+      onEdgeDoubleClick={handleEdgeDoubleClick}
       proOptions={{ hideAttribution: true }}
       onlyRenderVisibleElements
       minZoom={0.2}

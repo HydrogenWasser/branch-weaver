@@ -1,15 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { NODE_COLOR_THEMES, TAG_SUGGESTIONS } from "../lib/nodeAppearance";
 import { useEditorStore } from "../store/editorStore";
 
-export default function Inspector() {
+type InspectorProps = {
+  onCollapse?: () => void;
+};
+
+export default function Inspector({ onCollapse }: InspectorProps) {
   const project = useEditorStore((state) => state.project);
   const selection = useEditorStore((state) => state.selection);
   const updateNode = useEditorStore((state) => state.updateNode);
+  const addNodeTag = useEditorStore((state) => state.addNodeTag);
+  const removeNodeTag = useEditorStore((state) => state.removeNodeTag);
+  const setNodeColor = useEditorStore((state) => state.setNodeColor);
   const addChoice = useEditorStore((state) => state.addChoice);
   const removeChoice = useEditorStore((state) => state.removeChoice);
   const updateChoiceText = useEditorStore((state) => state.updateChoiceText);
   const connectChoice = useEditorStore((state) => state.connectChoice);
   const setStartNode = useEditorStore((state) => state.setStartNode);
+  const [tagInput, setTagInput] = useState("");
 
   const selectedNode =
     selection?.type === "node"
@@ -28,11 +37,37 @@ export default function Inspector() {
     [project.nodes, selectedNode?.id]
   );
 
+  const suggestedTags = useMemo(
+    () => TAG_SUGGESTIONS.filter((tag) => !selectedNode?.tags.includes(tag)),
+    [selectedNode?.tags]
+  );
+
+  const handleAddTag = (tag: string) => {
+    if (!selectedNode) {
+      return;
+    }
+
+    if (tag.trim().toLowerCase() === "start") {
+      setStartNode(selectedNode.id);
+    } else {
+      addNodeTag(selectedNode.id, tag);
+    }
+
+    setTagInput("");
+  };
+
   if (!selectedNode) {
     return (
       <aside className="inspector">
-        <div className="panel">
+        <div className="workspace__panel-header">
           <h2>Inspector</h2>
+          {onCollapse ? (
+            <button type="button" className="workspace__collapse-button" onClick={onCollapse}>
+              Hide
+            </button>
+          ) : null}
+        </div>
+        <div className="panel">
           <p>Select a node or connection to edit its content.</p>
         </div>
       </aside>
@@ -41,8 +76,16 @@ export default function Inspector() {
 
   return (
     <aside className="inspector">
+      <div className="workspace__panel-header">
+        <h2>Inspector</h2>
+        {onCollapse ? (
+          <button type="button" className="workspace__collapse-button" onClick={onCollapse}>
+            Hide
+          </button>
+        ) : null}
+      </div>
       <div className="panel">
-        <h2>Node</h2>
+        <h3>Node</h3>
         <label className="field">
           <span>Title</span>
           <input
@@ -61,13 +104,6 @@ export default function Inspector() {
           />
         </label>
         <div className="inspector__row">
-          <button
-            type="button"
-            className={project.metadata.startNodeId === selectedNode.id ? "is-active" : ""}
-            onClick={() => setStartNode(selectedNode.id)}
-          >
-            {project.metadata.startNodeId === selectedNode.id ? "Start Node" : "Set As Start"}
-          </button>
           <button type="button" onClick={() => addChoice(selectedNode.id)}>
             Add Choice
           </button>
@@ -75,7 +111,68 @@ export default function Inspector() {
       </div>
 
       <div className="panel">
-        <h2>Choices</h2>
+        <h3>Tags</h3>
+        <div className="tag-editor__list">
+          {selectedNode.tags.length > 0 ? (
+            selectedNode.tags.map((tag) => (
+              <div key={tag} className="tag-chip">
+                <span>{tag}</span>
+                <button type="button" onClick={() => removeNodeTag(selectedNode.id, tag)}>
+                  Remove
+                </button>
+              </div>
+            ))
+          ) : (
+            <p>This node has no tags yet.</p>
+          )}
+        </div>
+        <label className="field">
+          <span>Add Custom Tag</span>
+          <div className="tag-editor__input-row">
+            <input
+              value={tagInput}
+              onChange={(event) => setTagInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleAddTag(tagInput);
+                }
+              }}
+              placeholder="Type a tag name"
+            />
+            <button type="button" onClick={() => handleAddTag(tagInput)}>
+              Add
+            </button>
+          </div>
+        </label>
+        <div className="tag-editor__suggestions">
+          {suggestedTags.map((tag) => (
+            <button key={tag} type="button" onClick={() => handleAddTag(tag)}>
+              {tag}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>Node Color</h3>
+        <div className="color-palette">
+          {Object.entries(NODE_COLOR_THEMES).map(([token, theme]) => (
+            <button
+              key={token}
+              type="button"
+              className={`color-swatch${selectedNode.colorToken === token ? " is-selected" : ""}`}
+              onClick={() => setNodeColor(selectedNode.id, token as typeof selectedNode.colorToken)}
+            >
+              <span className="color-swatch__preview" style={{ background: theme.miniMap }} />
+              <span>{theme.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>Choices</h3>
         {selectedNode.choices.length === 0 ? <p>This node has no outgoing choices yet.</p> : null}
         <div className="choice-list">
           {selectedNode.choices.map((choice) => (
@@ -135,7 +232,7 @@ export default function Inspector() {
 
       {selectedChoice ? (
         <div className="panel">
-          <h2>Selected Connection</h2>
+          <h3>Selected Connection</h3>
           <p>
             <strong>{selectedChoice.text || "Untitled choice"}</strong>
           </p>

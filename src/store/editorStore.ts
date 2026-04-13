@@ -9,9 +9,11 @@ import {
   fileNameFromTitle,
   getChoiceBySelection
 } from "../lib/story";
+import { normalizeNodeTag, sortNodeTags } from "../lib/nodeTags";
 import type {
   ChoiceSelection,
   EditorSelection,
+  NodeColorToken,
   StoryProject,
   ViewportState,
   XYPosition
@@ -50,6 +52,9 @@ type EditorStore = {
   updateNode: (nodeId: string, patch: NodePatch) => void;
   moveNode: (nodeId: string, position: XYPosition) => void;
   applyNodeLayout: (positions: Record<string, XYPosition>) => void;
+  addNodeTag: (nodeId: string, tag: string) => void;
+  removeNodeTag: (nodeId: string, tag: string) => void;
+  setNodeColor: (nodeId: string, colorToken: NodeColorToken) => void;
   addChoice: (nodeId: string) => void;
   removeChoice: (selection: ChoiceSelection) => void;
   updateChoiceText: (selection: ChoiceSelection, text: string) => void;
@@ -96,6 +101,18 @@ function snapshot(project: StoryProject): HistoryEntry {
 
 function snapshotString(project: StoryProject): string {
   return JSON.stringify(project);
+}
+
+function syncStartTag(project: StoryProject, nodeId: string): StoryProject {
+  project.metadata.startNodeId = nodeId;
+  project.nodes = project.nodes.map((node) => {
+    const nextTags = node.tags.filter((tag) => tag !== "Start");
+    return node.id === nodeId
+      ? { ...node, tags: sortNodeTags([...nextTags, "Start"]) }
+      : { ...node, tags: nextTags };
+  });
+
+  return project;
 }
 
 function withProjectMutation(
@@ -189,7 +206,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         }
 
         if (project.metadata.startNodeId === nodeId && fallbackNode) {
-          project.metadata.startNodeId = fallbackNode.id;
+          syncStartTag(project, fallbackNode.id);
         }
 
         return {
@@ -240,6 +257,86 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         return { project };
       });
     }),
+  addNodeTag: (nodeId, tag) =>
+    set((state) => {
+      const normalizedTag = normalizeNodeTag(tag);
+      if (!normalizedTag) {
+        return state;
+      }
+
+      return withProjectMutation(state, (project) => {
+        if (normalizedTag === "Start") {
+          syncStartTag(project, nodeId);
+          return {
+            project,
+            selection: { type: "node", nodeId }
+          };
+        }
+
+        project.nodes = project.nodes.map((node) => {
+          if (node.id !== nodeId) {
+            return node;
+          }
+
+          if (node.tags.includes(normalizedTag)) {
+            return node;
+          }
+
+          return {
+            ...node,
+            tags: sortNodeTags([...node.tags, normalizedTag])
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "node", nodeId }
+        };
+      });
+    }),
+  removeNodeTag: (nodeId, tag) =>
+    set((state) => {
+      const normalizedTag = normalizeNodeTag(tag);
+      if (!normalizedTag) {
+        return state;
+      }
+
+      if (normalizedTag === "Start") {
+        return {
+          ...state,
+          lastError: 'Assign the "Start" tag to another node before removing it here.'
+        };
+      }
+
+      return withProjectMutation(state, (project) => {
+        project.nodes = project.nodes.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                tags: node.tags.filter((nodeTag) => nodeTag !== normalizedTag)
+              }
+            : node
+        );
+
+        return {
+          project,
+          selection: { type: "node", nodeId }
+        };
+      });
+    }),
+  setNodeColor: (nodeId, colorToken) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        project.nodes = project.nodes.map((node) =>
+          node.id === nodeId ? { ...node, colorToken } : node
+        );
+
+        return {
+          project,
+          selection: { type: "node", nodeId }
+        };
+      })
+    ),
   addChoice: (nodeId) =>
     set((state) =>
       withProjectMutation(state, (project) => {
@@ -304,7 +401,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setStartNode: (nodeId) =>
     set((state) =>
       withProjectMutation(state, (project) => {
-        project.metadata.startNodeId = nodeId;
+        syncStartTag(project, nodeId);
         return {
           project,
           selection: { type: "node", nodeId }

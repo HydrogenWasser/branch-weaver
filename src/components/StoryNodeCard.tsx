@@ -1,40 +1,84 @@
 import { memo, useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
+import { getNodeCardStyle } from "../lib/nodeAppearance";
 import type { StoryNode } from "../types/story";
 
-type StoryNodeData = {
+export type StoryNodeData = {
   storyNode: StoryNode;
-  isStartNode: boolean;
   isSearchMatch: boolean;
+  selectedChoiceId: string | null;
+  onNodeBodyClick: (nodeId: string) => void;
+  onNodeBodyDoubleClick: (nodeId: string) => void;
+  onChoiceClick: (nodeId: string, choiceId: string) => void;
+  onChoiceDoubleClick: (nodeId: string, choiceId: string, targetNodeId: string | null) => void;
 };
 
 function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
   const updateNodeInternals = useUpdateNodeInternals();
   const excerpt = data.storyNode.body.trim() || "Empty scene";
   const preview = excerpt.length > 180 ? `${excerpt.slice(0, 177)}...` : excerpt;
+  const cardStyle = getNodeCardStyle(data.storyNode.colorToken);
 
   useEffect(() => {
     updateNodeInternals(id);
-  }, [data.storyNode.choices.length, id, updateNodeInternals]);
+  }, [
+    data.storyNode.body,
+    data.storyNode.choices.length,
+    data.storyNode.colorToken,
+    data.storyNode.tags.join("|"),
+    data.storyNode.title,
+    id,
+    updateNodeInternals
+  ]);
 
   return (
-    <div className={`story-node-card${selected ? " is-selected" : ""}${data.isSearchMatch ? " is-match" : ""}`}>
+    <div
+      className={`story-node-card${selected ? " is-selected" : ""}${data.isSearchMatch ? " is-match" : ""}`}
+      style={cardStyle}
+    >
       <Handle
         type="target"
         position={Position.Left}
         className="story-node-card__handle story-node-card__handle--target"
       />
-      <div className="story-node-card__header">
-        <div>
-          <strong>{data.storyNode.title || "Untitled Node"}</strong>
-          <p>{data.storyNode.id}</p>
+      <div
+        className="story-node-card__body-section"
+        onClick={() => data.onNodeBodyClick(data.storyNode.id)}
+        onDoubleClick={() => data.onNodeBodyDoubleClick(data.storyNode.id)}
+      >
+        <div className="story-node-card__header">
+          {data.storyNode.tags.length > 0 ? (
+            <div className="story-node-card__tags">
+              {data.storyNode.tags.map((tag) => (
+                <span key={tag} className="story-node-card__tag">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div>
+            <strong>{data.storyNode.title || "Untitled Node"}</strong>
+            <p>{data.storyNode.id}</p>
+          </div>
         </div>
-        {data.isStartNode ? <span className="story-node-card__badge">Start</span> : null}
+        <p className="story-node-card__body">{preview}</p>
       </div>
-      <p className="story-node-card__body">{preview}</p>
       <div className="story-node-card__choices">
         {data.storyNode.choices.map((choice) => (
-          <div key={choice.id} className="story-node-card__choice">
+          <div
+            key={choice.id}
+            className={`story-node-card__choice nodrag nopan${
+              data.selectedChoiceId === choice.id ? " is-selected" : ""
+            }`}
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onChoiceClick(data.storyNode.id, choice.id);
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              data.onChoiceDoubleClick(data.storyNode.id, choice.id, choice.targetNodeId);
+            }}
+          >
             <span>{choice.text || "Untitled choice"}</span>
             <Handle
               id={choice.id}

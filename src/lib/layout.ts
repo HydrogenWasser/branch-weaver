@@ -6,10 +6,12 @@ const BASE_NODE_HEIGHT = 132;
 const CHOICE_HEIGHT = 34;
 const BODY_LINE_HEIGHT = 18;
 const CHARS_PER_LINE = 34;
+const TAG_ROW_HEIGHT = 28;
 
 function estimateNodeHeight(node: StoryNode): number {
   const bodyLines = Math.max(1, Math.ceil((node.body.trim().length || 1) / CHARS_PER_LINE));
-  return BASE_NODE_HEIGHT + node.choices.length * CHOICE_HEIGHT + bodyLines * BODY_LINE_HEIGHT;
+  const tagHeight = node.tags.length > 0 ? TAG_ROW_HEIGHT : 0;
+  return BASE_NODE_HEIGHT + tagHeight + node.choices.length * CHOICE_HEIGHT + bodyLines * BODY_LINE_HEIGHT;
 }
 
 function buildStableNodeOrder(project: StoryProject): string[] {

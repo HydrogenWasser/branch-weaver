@@ -19,6 +19,8 @@ export default function App() {
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
 
   const project = useEditorStore((state) => state.project);
   const dirty = useEditorStore((state) => state.dirty);
@@ -246,76 +248,103 @@ export default function App() {
         onLoadExample={handleLoadExample}
       />
 
-      <div className="workspace">
-        <aside className="sidebar">
-          <div className="panel">
-            <h2>Project</h2>
-            <label className="field">
-              <span>Story Title</span>
-              <input
-                value={project.metadata.title}
-                onChange={(event) => updateProjectTitle(event.target.value)}
-                placeholder="Project title"
+      <div
+        className={`workspace${leftSidebarCollapsed ? " is-left-collapsed" : ""}${
+          rightSidebarCollapsed ? " is-right-collapsed" : ""
+        }`}
+      >
+        <div className={`workspace__side workspace__side--left${leftSidebarCollapsed ? " is-collapsed" : ""}`}>
+          {leftSidebarCollapsed ? (
+            <button
+              type="button"
+              className="sidebar-rail sidebar-rail--left"
+              onClick={() => setLeftSidebarCollapsed(false)}
+            >
+              <span>Project</span>
+            </button>
+          ) : (
+            <aside className="sidebar">
+              <div className="workspace__panel-header">
+                <h2>Sidebar</h2>
+                <button
+                  type="button"
+                  className="workspace__collapse-button"
+                  onClick={() => setLeftSidebarCollapsed(true)}
+                >
+                  Hide
+                </button>
+              </div>
+
+              <div className="panel">
+                <h3>Project</h3>
+                <label className="field">
+                  <span>Story Title</span>
+                  <input
+                    value={project.metadata.title}
+                    onChange={(event) => updateProjectTitle(event.target.value)}
+                    placeholder="Project title"
+                  />
+                </label>
+                <p>Nodes: {project.nodes.length}</p>
+                <p>Save mode: Browser download</p>
+              </div>
+
+              <div className="panel">
+                <h3>Canvas</h3>
+                <button type="button" onClick={() => addNode({ x: 240, y: 240 })}>
+                  New Node
+                </button>
+                <button type="button" onClick={handleAutoLayout}>
+                  Auto Layout
+                </button>
+                <button type="button" onClick={() => setFitRequest((value) => value + 1)}>
+                  Fit View
+                </button>
+                <button type="button" onClick={() => fitView?.()}>
+                  Center Graph
+                </button>
+                <button type="button" onClick={() => setPreviewOpen(true)}>
+                  Play Preview
+                </button>
+                <button type="button" disabled={!selection} onClick={handleDeleteSelection}>
+                  Delete Selected
+                </button>
+              </div>
+
+              <SearchPanel
+                query={searchQuery}
+                resultCount={searchResults.length}
+                totalCount={project.nodes.length}
+                results={searchResults}
+                onQueryChange={setSearchQuery}
+                onSelectNode={focusNode}
               />
-            </label>
-            <p>Nodes: {project.nodes.length}</p>
-            <p>Save mode: Browser download</p>
-          </div>
 
-          <div className="panel">
-            <h2>Canvas</h2>
-            <button type="button" onClick={() => addNode({ x: 240, y: 240 })}>
-              New Node
-            </button>
-            <button type="button" onClick={handleAutoLayout}>
-              Auto Layout
-            </button>
-            <button type="button" onClick={() => setFitRequest((value) => value + 1)}>
-              Fit View
-            </button>
-            <button type="button" onClick={() => fitView?.()}>
-              Center Graph
-            </button>
-            <button type="button" onClick={() => setPreviewOpen(true)}>
-              Play Preview
-            </button>
-            <button type="button" disabled={!selection} onClick={handleDeleteSelection}>
-              Delete Selected
-            </button>
-          </div>
+              <div className="panel">
+                <h3>History</h3>
+                <button type="button" disabled={!canUndo} onClick={undo}>
+                  Undo
+                </button>
+                <button type="button" disabled={!canRedo} onClick={redo}>
+                  Redo
+                </button>
+              </div>
 
-          <SearchPanel
-            query={searchQuery}
-            resultCount={searchResults.length}
-            totalCount={project.nodes.length}
-            results={searchResults}
-            onQueryChange={setSearchQuery}
-            onSelectNode={focusNode}
-          />
-
-          <div className="panel">
-            <h2>History</h2>
-            <button type="button" disabled={!canUndo} onClick={undo}>
-              Undo
-            </button>
-            <button type="button" disabled={!canRedo} onClick={redo}>
-              Redo
-            </button>
-          </div>
-
-          <div className="panel">
-            <h2>Export Checks</h2>
-            {exportIssues.length === 0 ? (
-              <p>Ready to export.</p>
-            ) : (
-              <ul className="issue-list">
-                {exportIssues.map((issue) => (
-                  <li key={issue}>{issue}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </aside>
+              <div className="panel">
+                <h3>Export Checks</h3>
+                {exportIssues.length === 0 ? (
+                  <p>Ready to export.</p>
+                ) : (
+                  <ul className="issue-list">
+                    {exportIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </aside>
+          )}
+        </div>
 
         <main className="canvas-area">
           {lastError ? (
@@ -333,11 +362,24 @@ export default function App() {
             focusNodeId={focusNodeId}
             highlightedNodeIds={highlightedNodeIds}
             onFitReady={handleFitReady}
+            onRequestFocusNode={focusNode}
           />
           <PreviewPlayer open={previewOpen} project={project} onClose={() => setPreviewOpen(false)} />
         </main>
 
-        <Inspector />
+        <div className={`workspace__side workspace__side--right${rightSidebarCollapsed ? " is-collapsed" : ""}`}>
+          {rightSidebarCollapsed ? (
+            <button
+              type="button"
+              className="sidebar-rail sidebar-rail--right"
+              onClick={() => setRightSidebarCollapsed(false)}
+            >
+              <span>Inspector</span>
+            </button>
+          ) : (
+            <Inspector onCollapse={() => setRightSidebarCollapsed(true)} />
+          )}
+        </div>
       </div>
     </div>
   );
