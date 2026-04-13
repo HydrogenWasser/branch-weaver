@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vscode/
+.DS_Store
+Thumbs.db
+.chrome-profile/
+.chrome-profile-cold/
+.chrome*.log
+.devserver*.log
