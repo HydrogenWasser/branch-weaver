@@ -33,6 +33,11 @@ export type StoryCondition = {
   value: boolean | number;
 };
 
+export type StoryEffect = {
+  globalId: string;
+  value: boolean | number;
+};
+
 export type StoryConditionalBranch = {
   condition: StoryCondition;
   targetNodeId: string | null;
@@ -53,6 +58,7 @@ export type StoryChoice = {
   id: string;
   text: string;
   visibilityCondition: StoryCondition | null;
+  effects: StoryEffect[];
   route: StoryChoiceRoute;
 };
 
@@ -108,6 +114,11 @@ const storyConditionSchema = z.object({
   value: conditionValueSchema
 });
 
+const storyEffectSchema = z.object({
+  globalId: z.string().min(1),
+  value: conditionValueSchema
+});
+
 const globalSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -143,6 +154,7 @@ const choiceSchemaV2 = z.object({
   id: z.string().min(1),
   text: z.string(),
   visibilityCondition: storyConditionSchema.nullable().default(null),
+  effects: z.array(storyEffectSchema).default([]),
   route: choiceRouteSchema
 });
 

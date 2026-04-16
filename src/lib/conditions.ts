@@ -4,6 +4,7 @@ import type {
   StoryChoice,
   StoryChoiceRoute,
   StoryCondition,
+  StoryEffect,
   StoryGlobal
 } from "../types/story";
 
@@ -118,6 +119,10 @@ export function getChoiceReferencedGlobalIds(choice: StoryChoice): string[] {
     ids.add(choice.visibilityCondition.globalId);
   }
 
+  for (const effect of choice.effects) {
+    ids.add(effect.globalId);
+  }
+
   if (choice.route.mode === "conditional") {
     for (const branch of choice.route.branches) {
       ids.add(branch.condition.globalId);
@@ -125,6 +130,25 @@ export function getChoiceReferencedGlobalIds(choice: StoryChoice): string[] {
   }
 
   return [...ids];
+}
+
+export function applyEffects(
+  effects: StoryEffect[],
+  globalsById: Map<string, StoryGlobal>,
+  values: Map<string, boolean | number>
+): void {
+  for (const effect of effects) {
+    const storyGlobal = globalsById.get(effect.globalId);
+    if (!storyGlobal) {
+      continue;
+    }
+
+    if (storyGlobal.valueType === "boolean" && typeof effect.value === "boolean") {
+      values.set(effect.globalId, effect.value);
+    } else if (storyGlobal.valueType === "number" && typeof effect.value === "number" && Number.isFinite(effect.value)) {
+      values.set(effect.globalId, effect.value);
+    }
+  }
 }
 
 export function replaceRouteTargetNodeId(route: StoryChoiceRoute, removedNodeId: string): StoryChoiceRoute {
@@ -180,11 +204,30 @@ export function formatConditionSummary(
   return `${label} ${formatOperatorLabel(condition.operator)} ${condition.value}`;
 }
 
+export function formatEffectsSummary(choice: StoryChoice, globalsById: Map<string, StoryGlobal>): string | null {
+  if (choice.effects.length === 0) {
+    return null;
+  }
+
+  const labels = choice.effects.map((effect) => {
+    const storyGlobal = globalsById.get(effect.globalId);
+    const name = storyGlobal?.name || "Unknown";
+    return `${name} = ${effect.value}`;
+  });
+
+  return `Sets ${labels.join(", ")}`;
+}
+
 export function formatChoiceSummary(choice: StoryChoice, globalsById: Map<string, StoryGlobal>): string | null {
   const parts: string[] = [];
 
   if (choice.visibilityCondition) {
     parts.push(`Visible if ${formatConditionSummary(choice.visibilityCondition, globalsById)}`);
+  }
+
+  const effectsSummary = formatEffectsSummary(choice, globalsById);
+  if (effectsSummary) {
+    parts.push(effectsSummary);
   }
 
   if (choice.route.mode === "conditional") {

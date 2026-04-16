@@ -28,6 +28,9 @@ export default function Inspector({ onCollapse }: InspectorProps) {
   const updateConditionalBranchCondition = useEditorStore((state) => state.updateConditionalBranchCondition);
   const updateConditionalBranchTarget = useEditorStore((state) => state.updateConditionalBranchTarget);
   const updateConditionalFallbackTarget = useEditorStore((state) => state.updateConditionalFallbackTarget);
+  const addChoiceEffect = useEditorStore((state) => state.addChoiceEffect);
+  const removeChoiceEffect = useEditorStore((state) => state.removeChoiceEffect);
+  const updateChoiceEffect = useEditorStore((state) => state.updateChoiceEffect);
   const setStartNode = useEditorStore((state) => state.setStartNode);
   const [tagInput, setTagInput] = useState("");
   const globalsById = useMemo(
@@ -249,6 +252,119 @@ export default function Inspector({ onCollapse }: InspectorProps) {
                     {project.globals.length === 0
                       ? "Add a global first to enable visibility conditions."
                       : "This choice is always visible."}
+                  </p>
+                )}
+              </div>
+
+              <div className="choice-editor__section">
+                <div className="panel__header">
+                  <h3>Effects</h3>
+                  <button
+                    type="button"
+                    disabled={project.globals.length === 0}
+                    onClick={() => {
+                      const firstGlobal = project.globals[0];
+                      if (firstGlobal) {
+                        addChoiceEffect({ nodeId: selectedNode.id, choiceId: choice.id }, firstGlobal.id);
+                      }
+                    }}
+                  >
+                    Add Effect
+                  </button>
+                </div>
+
+                {choice.effects.length > 0 ? (
+                  <div className="effect-editor__list">
+                    {choice.effects.map((effect, index) => {
+                      const effectGlobal = globalsById.get(effect.globalId) ?? project.globals[0];
+                      const safeValue =
+                        effectGlobal?.valueType === "boolean"
+                          ? effect.value === true
+                          : typeof effect.value === "number" && Number.isFinite(effect.value)
+                            ? effect.value
+                            : 0;
+
+                      return (
+                        <div key={`${choice.id}-effect-${index}`} className="effect-editor">
+                          <div className="effect-editor__row">
+                            <label className="field">
+                              <span>Global</span>
+                              <select
+                                value={effect.globalId}
+                                onChange={(event) => {
+                                  const nextGlobal = globalsById.get(event.target.value);
+                                  if (!nextGlobal) {
+                                    return;
+                                  }
+                                  const nextEffects = [...choice.effects];
+                                  nextEffects[index] = {
+                                    globalId: nextGlobal.id,
+                                    value: nextGlobal.defaultValue
+                                  };
+                                  updateChoiceEffect(
+                                    { nodeId: selectedNode.id, choiceId: choice.id },
+                                    index,
+                                    nextGlobal.defaultValue
+                                  );
+                                }}
+                              >
+                                {project.globals.map((storyGlobal) => (
+                                  <option key={storyGlobal.id} value={storyGlobal.id}>
+                                    {storyGlobal.name || storyGlobal.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="field">
+                              <span>Value</span>
+                              {effectGlobal?.valueType === "boolean" ? (
+                                <select
+                                  value={safeValue === true ? "true" : "false"}
+                                  onChange={(event) =>
+                                    updateChoiceEffect(
+                                      { nodeId: selectedNode.id, choiceId: choice.id },
+                                      index,
+                                      event.target.value === "true"
+                                    )
+                                  }
+                                >
+                                  <option value="true">true</option>
+                                  <option value="false">false</option>
+                                </select>
+                              ) : (
+                                <input
+                                  type="number"
+                                  value={typeof safeValue === "number" ? safeValue : 0}
+                                  onChange={(event) =>
+                                    updateChoiceEffect(
+                                      { nodeId: selectedNode.id, choiceId: choice.id },
+                                      index,
+                                      Number(event.target.value)
+                                    )
+                                  }
+                                />
+                              )}
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeChoiceEffect({ nodeId: selectedNode.id, choiceId: choice.id }, index)
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="choice-editor__hint">
+                    {project.globals.length === 0
+                      ? "Add a global first to create effects."
+                      : "This choice has no effects yet."}
                   </p>
                 )}
               </div>

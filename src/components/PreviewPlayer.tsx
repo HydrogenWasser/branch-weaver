@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { isChoiceVisible, resolveChoiceTargetNodeId } from "../lib/conditions";
-import type { StoryNode, StoryProject } from "../types/story";
+import { applyEffects, isChoiceVisible, resolveChoiceTargetNodeId } from "../lib/conditions";
+import type { StoryChoice, StoryNode, StoryProject } from "../types/story";
 
 type PreviewPlayerProps = {
   open: boolean;
@@ -18,9 +18,8 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
     () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
     [project.globals]
   );
-  const runtimeGlobals = useMemo(
-    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue])),
-    [project.globals]
+  const [runtimeGlobals, setRuntimeGlobals] = useState<Map<string, boolean | number>>(
+    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue]))
   );
   const [history, setHistory] = useState<string[]>([]);
 
@@ -30,7 +29,8 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
     }
 
     setHistory([project.metadata.startNodeId]);
-  }, [open, project.metadata.startNodeId]);
+    setRuntimeGlobals(new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue])));
+  }, [open, project.metadata.startNodeId, project.globals]);
 
   useEffect(() => {
     if (!open) {
@@ -59,16 +59,23 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
 
   const handleRestart = () => {
     setHistory([project.metadata.startNodeId]);
+    setRuntimeGlobals(new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue])));
   };
 
   const handleBack = () => {
     setHistory((currentHistory) => (currentHistory.length > 1 ? currentHistory.slice(0, -1) : currentHistory));
   };
 
-  const handleAdvance = (targetNodeId: string | null) => {
+  const handleAdvance = (choice: StoryChoice, targetNodeId: string | null) => {
     if (!targetNodeId || !nodeMap.has(targetNodeId)) {
       return;
     }
+
+    setRuntimeGlobals((current) => {
+      const next = new Map(current);
+      applyEffects(choice.effects, globalsById, next);
+      return next;
+    });
 
     setHistory((currentHistory) => [...currentHistory, targetNodeId]);
   };
@@ -115,7 +122,7 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
                       type="button"
                       className="preview-choice"
                       disabled={missingTarget}
-                      onClick={() => handleAdvance(resolvedTargetNodeId)}
+                      onClick={() => handleAdvance(choice, resolvedTargetNodeId)}
                     >
                       <strong>{choice.text || "Untitled choice"}</strong>
                       <span>{missingTarget ? "Unlinked choice" : "Continue"}</span>
@@ -138,12 +145,21 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
         )}
 
         <div className="preview-player__footer">
-          <button type="button" onClick={handleBack} disabled={history.length <= 1}>
-            Back
-          </button>
-          <button type="button" onClick={handleRestart}>
-            Restart
-          </button>
+          <div style={{ fontSize: "0.84rem", color: "#6a5440" }}>
+            {project.globals.length > 0
+              ? project.globals
+                  .map((g) => `${g.name}=${String(runtimeGlobals.get(g.id) ?? g.defaultValue)}`)
+                  .join("  |  ")
+              : "No globals"}
+          </div>
+          <div style={{ display: "flex", gap: "0.65rem" }}>
+            <button type="button" onClick={handleBack} disabled={history.length <= 1}>
+              Back
+            </button>
+            <button type="button" onClick={handleRestart}>
+              Restart
+            </button>
+          </div>
         </div>
       </section>
     </div>

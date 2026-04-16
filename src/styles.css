@@ -265,10 +265,26 @@ textarea {
 
 .globals-panel__actions,
 .globals-panel__row,
-.condition-editor__row {
+.condition-editor__row,
+.effect-editor__row {
   display: flex;
   gap: 0.45rem;
   flex-wrap: wrap;
+}
+
+.effect-editor__row {
+  align-items: flex-end;
+}
+
+.effect-editor__row .field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.effect-editor__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
 .choice-list {
@@ -300,7 +316,8 @@ textarea {
 .choice-editor__section,
 .global-editor,
 .conditional-branch,
-.condition-editor {
+.condition-editor,
+.effect-editor {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;

@@ -33,6 +33,7 @@ export const exampleProject: StoryProject = {
           id: "choice_door",
           text: "Try the door",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "conditional",
             branches: [
@@ -60,6 +61,7 @@ export const exampleProject: StoryProject = {
           id: "choice_window",
           text: "Inspect the window",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_window"
@@ -73,6 +75,7 @@ export const exampleProject: StoryProject = {
             operator: "lte",
             value: 2
           },
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_panel"
@@ -92,6 +95,7 @@ export const exampleProject: StoryProject = {
           id: "choice_return",
           text: "Step back into the room",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_start"
@@ -111,6 +115,7 @@ export const exampleProject: StoryProject = {
           id: "choice_open_return",
           text: "Retreat back inside",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_start"
@@ -130,6 +135,7 @@ export const exampleProject: StoryProject = {
           id: "choice_note",
           text: "Read the note",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_note"
@@ -149,6 +155,9 @@ export const exampleProject: StoryProject = {
           id: "choice_panel_back",
           text: "Pocket the key and return",
           visibilityCondition: null,
+          effects: [
+            { globalId: "global_has_key", value: true }
+          ],
           route: {
             mode: "direct",
             targetNodeId: "node_start"
@@ -168,6 +177,7 @@ export const exampleProject: StoryProject = {
           id: "choice_restart",
           text: "Look around again",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_start"
@@ -187,6 +197,7 @@ export const exampleProject: StoryProject = {
           id: "choice_alarm_back",
           text: "Stand very still",
           visibilityCondition: null,
+          effects: [],
           route: {
             mode: "direct",
             targetNodeId: "node_start"

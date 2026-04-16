@@ -6,6 +6,7 @@ import {
   type NodeColorToken,
   type StoryChoice,
   type StoryCondition,
+  type StoryEffect,
   type StoryGlobal,
   type StoryNode,
   type StoryProject,
@@ -44,6 +45,7 @@ export function createChoice(): StoryChoice {
     id: createId("choice"),
     text: "",
     visibilityCondition: null,
+    effects: [],
     route: {
       mode: "direct",
       targetNodeId: null
@@ -95,6 +97,7 @@ function migrateChoice(
       id: choice.id,
       text: choice.text,
       visibilityCondition: choice.visibilityCondition ?? null,
+      effects: ("effects" in choice ? choice.effects : []) ?? [],
       route: choice.route.mode === "direct"
         ? {
             mode: "direct",
@@ -115,6 +118,7 @@ function migrateChoice(
     id: choice.id,
     text: choice.text,
     visibilityCondition: null,
+    effects: [],
     route: {
       mode: "direct",
       targetNodeId: choice.targetNodeId ?? null
@@ -201,6 +205,28 @@ function validateCondition(
   }
 }
 
+function validateEffect(
+  effect: StoryEffect,
+  globalsById: Map<string, StoryGlobal>,
+  label: string
+): void {
+  const storyGlobal = globalsById.get(effect.globalId);
+  if (!storyGlobal) {
+    throw new Error(`${label} references a missing global "${effect.globalId}".`);
+  }
+
+  if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
+    throw new Error(`${label} must set boolean global "${storyGlobal.name}" to true/false.`);
+  }
+
+  if (
+    storyGlobal.valueType === "number" &&
+    (typeof effect.value !== "number" || !Number.isFinite(effect.value))
+  ) {
+    throw new Error(`${label} must set number global "${storyGlobal.name}" to a finite number.`);
+  }
+}
+
 export function validateStoryProject(input: unknown): StoryProject {
   const parsedProject = storyProjectSchema.parse(input) as StoryProjectInput;
   const migratedProject = migrateProject(parsedProject);
@@ -263,6 +289,10 @@ export function validateStoryProject(input: unknown): StoryProject {
 
       if (choice.visibilityCondition) {
         validateCondition(choice.visibilityCondition, globalsById, `Choice "${choice.id}" visibility`);
+      }
+
+      for (const [index, effect] of choice.effects.entries()) {
+        validateEffect(effect, globalsById, `Choice "${choice.id}" effect ${index + 1}`);
       }
 
       if (choice.route.mode === "direct") {
@@ -409,6 +439,15 @@ export function exportValidationErrors(project: StoryProject): string[] {
         );
       }
 
+      for (const [index, effect] of choice.effects.entries()) {
+        appendEffectValidationErrors(
+          errors,
+          effect,
+          globalsById,
+          `Choice "${choice.text || choice.id}" effect ${index + 1}`
+        );
+      }
+
       if (choice.route.mode === "direct") {
         if (!choice.route.targetNodeId) {
           errors.push(`Choice "${choice.text || choice.id}" in node "${node.title || node.id}" has no target.`);
@@ -468,6 +507,30 @@ function appendConditionValidationErrors(
     (typeof condition.value !== "number" || !Number.isFinite(condition.value))
   ) {
     errors.push(`${label} must compare "${storyGlobal.name}" with a finite number.`);
+  }
+}
+
+function appendEffectValidationErrors(
+  errors: string[],
+  effect: StoryEffect,
+  globalsById: Map<string, StoryGlobal>,
+  label: string
+): void {
+  const storyGlobal = globalsById.get(effect.globalId);
+  if (!storyGlobal) {
+    errors.push(`${label} references a missing global.`);
+    return;
+  }
+
+  if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
+    errors.push(`${label} must set "${storyGlobal.name}" to true/false.`);
+  }
+
+  if (
+    storyGlobal.valueType === "number" &&
+    (typeof effect.value !== "number" || !Number.isFinite(effect.value))
+  ) {
+    errors.push(`${label} must set "${storyGlobal.name}" to a finite number.`);
   }
 }
 

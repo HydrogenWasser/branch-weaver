@@ -13,7 +13,7 @@ import {
   isGlobalReferenced,
   normalizeConditionForGlobal
 } from "../lib/story";
-import { createDefaultCondition, replaceRouteTargetNodeId } from "../lib/conditions";
+import { coerceConditionValue, createDefaultCondition, replaceRouteTargetNodeId } from "../lib/conditions";
 import { normalizeNodeTag, sortNodeTags } from "../lib/nodeTags";
 import type {
   ChoiceSelection,
@@ -89,6 +89,9 @@ type EditorStore = {
     targetNodeId: string | null
   ) => void;
   updateConditionalFallbackTarget: (selection: ChoiceSelection, targetNodeId: string | null) => void;
+  addChoiceEffect: (selection: ChoiceSelection, globalId: string) => void;
+  removeChoiceEffect: (selection: ChoiceSelection, index: number) => void;
+  updateChoiceEffect: (selection: ChoiceSelection, index: number, value: boolean | number) => void;
   setStartNode: (nodeId: string) => void;
   deleteSelection: () => void;
   undo: () => void;
@@ -752,6 +755,71 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
               }
             : choice
         );
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  addChoiceEffect: (selection, globalId) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        const storyGlobal = getGlobalById(project, globalId);
+        if (!storyGlobal) {
+          return { project };
+        }
+
+        updateChoiceInProject(project, selection, (choice) => ({
+          ...choice,
+          effects: [
+            ...choice.effects,
+            { globalId: storyGlobal.id, value: storyGlobal.defaultValue }
+          ]
+        }));
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  removeChoiceEffect: (selection, index) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => ({
+          ...choice,
+          effects: choice.effects.filter((_, i) => i !== index)
+        }));
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  updateChoiceEffect: (selection, index, value) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => {
+          const effect = choice.effects[index];
+          if (!effect) {
+            return choice;
+          }
+
+          const storyGlobal = getGlobalById(project, effect.globalId);
+          if (!storyGlobal) {
+            return choice;
+          }
+
+          const nextEffects = [...choice.effects];
+          nextEffects[index] = {
+            globalId: storyGlobal.id,
+            value: coerceConditionValue(storyGlobal.valueType, value)
+          };
+
+          return { ...choice, effects: nextEffects };
+        });
 
         return {
           project,
