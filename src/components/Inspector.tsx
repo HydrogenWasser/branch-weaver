@@ -31,6 +31,7 @@ export default function Inspector({ onCollapse }: InspectorProps) {
   const addChoiceEffect = useEditorStore((state) => state.addChoiceEffect);
   const removeChoiceEffect = useEditorStore((state) => state.removeChoiceEffect);
   const updateChoiceEffect = useEditorStore((state) => state.updateChoiceEffect);
+  const updateChoiceEffectGlobal = useEditorStore((state) => state.updateChoiceEffectGlobal);
   const setStartNode = useEditorStore((state) => state.setStartNode);
   const [tagInput, setTagInput] = useState("");
   const globalsById = useMemo(
@@ -296,15 +297,10 @@ export default function Inspector({ onCollapse }: InspectorProps) {
                                   if (!nextGlobal) {
                                     return;
                                   }
-                                  const nextEffects = [...choice.effects];
-                                  nextEffects[index] = {
-                                    globalId: nextGlobal.id,
-                                    value: nextGlobal.defaultValue
-                                  };
-                                  updateChoiceEffect(
+                                  updateChoiceEffectGlobal(
                                     { nodeId: selectedNode.id, choiceId: choice.id },
                                     index,
-                                    nextGlobal.defaultValue
+                                    nextGlobal.id
                                   );
                                 }}
                               >

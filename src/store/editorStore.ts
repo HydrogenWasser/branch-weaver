@@ -92,6 +92,7 @@ type EditorStore = {
   addChoiceEffect: (selection: ChoiceSelection, globalId: string) => void;
   removeChoiceEffect: (selection: ChoiceSelection, index: number) => void;
   updateChoiceEffect: (selection: ChoiceSelection, index: number, value: boolean | number) => void;
+  updateChoiceEffectGlobal: (selection: ChoiceSelection, index: number, globalId: string) => void;
   setStartNode: (nodeId: string) => void;
   deleteSelection: () => void;
   undo: () => void;
@@ -816,6 +817,35 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           nextEffects[index] = {
             globalId: storyGlobal.id,
             value: coerceConditionValue(storyGlobal.valueType, value)
+          };
+
+          return { ...choice, effects: nextEffects };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  updateChoiceEffectGlobal: (selection, index, globalId) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        const storyGlobal = getGlobalById(project, globalId);
+        if (!storyGlobal) {
+          return { project };
+        }
+
+        updateChoiceInProject(project, selection, (choice) => {
+          const effect = choice.effects[index];
+          if (!effect) {
+            return choice;
+          }
+
+          const nextEffects = [...choice.effects];
+          nextEffects[index] = {
+            globalId: storyGlobal.id,
+            value: storyGlobal.defaultValue
           };
 
           return { ...choice, effects: nextEffects };
