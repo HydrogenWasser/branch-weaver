@@ -35,6 +35,7 @@ export type StoryCondition = {
 
 export type StoryEffect = {
   globalId: string;
+  operator: "set" | "change";
   value: boolean | number;
 };
 
@@ -116,6 +117,7 @@ const storyConditionSchema = z.object({
 
 const storyEffectSchema = z.object({
   globalId: z.string().min(1),
+  operator: z.enum(["set", "change"]).default("set"),
   value: conditionValueSchema
 });
 

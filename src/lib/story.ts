@@ -97,7 +97,10 @@ function migrateChoice(
       id: choice.id,
       text: choice.text,
       visibilityCondition: choice.visibilityCondition ?? null,
-      effects: ("effects" in choice ? choice.effects : []) ?? [],
+      effects: (("effects" in choice ? choice.effects : []) ?? []).map((effect) => ({
+        ...effect,
+        operator: effect.operator ?? "set"
+      })),
       route: choice.route.mode === "direct"
         ? {
             mode: "direct",
@@ -215,6 +218,17 @@ function validateEffect(
     throw new Error(`${label} references a missing global "${effect.globalId}".`);
   }
 
+  if (storyGlobal.valueType === "boolean" && effect.operator !== "set") {
+    throw new Error(`${label} cannot use "${effect.operator}" on boolean global "${storyGlobal.name}".`);
+  }
+
+  if (
+    storyGlobal.valueType === "number" &&
+    !["set", "change"].includes(effect.operator)
+  ) {
+    throw new Error(`${label} uses an invalid operator for number global "${storyGlobal.name}".`);
+  }
+
   if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
     throw new Error(`${label} must set boolean global "${storyGlobal.name}" to true/false.`);
   }
@@ -223,7 +237,7 @@ function validateEffect(
     storyGlobal.valueType === "number" &&
     (typeof effect.value !== "number" || !Number.isFinite(effect.value))
   ) {
-    throw new Error(`${label} must set number global "${storyGlobal.name}" to a finite number.`);
+    throw new Error(`${label} must use a finite number for global "${storyGlobal.name}".`);
   }
 }
 
@@ -522,6 +536,17 @@ function appendEffectValidationErrors(
     return;
   }
 
+  if (storyGlobal.valueType === "boolean" && effect.operator !== "set") {
+    errors.push(`${label} cannot use "${effect.operator}" on boolean global "${storyGlobal.name}".`);
+  }
+
+  if (
+    storyGlobal.valueType === "number" &&
+    !["set", "change"].includes(effect.operator)
+  ) {
+    errors.push(`${label} uses an invalid operator for "${storyGlobal.name}".`);
+  }
+
   if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
     errors.push(`${label} must set "${storyGlobal.name}" to true/false.`);
   }
@@ -530,7 +555,7 @@ function appendEffectValidationErrors(
     storyGlobal.valueType === "number" &&
     (typeof effect.value !== "number" || !Number.isFinite(effect.value))
   ) {
-    errors.push(`${label} must set "${storyGlobal.name}" to a finite number.`);
+    errors.push(`${label} must use a finite number for "${storyGlobal.name}".`);
   }
 }
 

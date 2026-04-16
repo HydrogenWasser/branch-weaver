@@ -156,7 +156,7 @@ export const exampleProject: StoryProject = {
           text: "Pocket the key and return",
           visibilityCondition: null,
           effects: [
-            { globalId: "global_has_key", value: true }
+            { globalId: "global_has_key", operator: "set", value: true }
           ],
           route: {
             mode: "direct",

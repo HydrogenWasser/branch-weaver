@@ -93,6 +93,11 @@ type EditorStore = {
   removeChoiceEffect: (selection: ChoiceSelection, index: number) => void;
   updateChoiceEffect: (selection: ChoiceSelection, index: number, value: boolean | number) => void;
   updateChoiceEffectGlobal: (selection: ChoiceSelection, index: number, globalId: string) => void;
+  updateChoiceEffectOperator: (
+    selection: ChoiceSelection,
+    index: number,
+    operator: "set" | "change"
+  ) => void;
   setStartNode: (nodeId: string) => void;
   deleteSelection: () => void;
   undo: () => void;
@@ -775,7 +780,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           ...choice,
           effects: [
             ...choice.effects,
-            { globalId: storyGlobal.id, value: storyGlobal.defaultValue }
+            { globalId: storyGlobal.id, operator: "set", value: storyGlobal.defaultValue }
           ]
         }));
 
@@ -816,6 +821,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           const nextEffects = [...choice.effects];
           nextEffects[index] = {
             globalId: storyGlobal.id,
+            operator: effect.operator,
             value: coerceConditionValue(storyGlobal.valueType, value)
           };
 
@@ -845,7 +851,39 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           const nextEffects = [...choice.effects];
           nextEffects[index] = {
             globalId: storyGlobal.id,
+            operator: "set",
             value: storyGlobal.defaultValue
+          };
+
+          return { ...choice, effects: nextEffects };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  updateChoiceEffectOperator: (selection, index, operator) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => {
+          const effect = choice.effects[index];
+          if (!effect) {
+            return choice;
+          }
+
+          const storyGlobal = getGlobalById(project, effect.globalId);
+          if (!storyGlobal) {
+            return choice;
+          }
+
+          const safeOperator = storyGlobal.valueType === "boolean" ? "set" : operator;
+
+          const nextEffects = [...choice.effects];
+          nextEffects[index] = {
+            ...effect,
+            operator: safeOperator
           };
 
           return { ...choice, effects: nextEffects };

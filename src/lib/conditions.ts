@@ -146,7 +146,13 @@ export function applyEffects(
     if (storyGlobal.valueType === "boolean" && typeof effect.value === "boolean") {
       values.set(effect.globalId, effect.value);
     } else if (storyGlobal.valueType === "number" && typeof effect.value === "number" && Number.isFinite(effect.value)) {
-      values.set(effect.globalId, effect.value);
+      if (effect.operator === "change") {
+        const current = values.get(effect.globalId) ?? storyGlobal.defaultValue;
+        const currentNumber = typeof current === "number" ? current : 0;
+        values.set(effect.globalId, currentNumber + effect.value);
+      } else {
+        values.set(effect.globalId, effect.value);
+      }
     }
   }
 }
@@ -212,6 +218,11 @@ export function formatEffectsSummary(choice: StoryChoice, globalsById: Map<strin
   const labels = choice.effects.map((effect) => {
     const storyGlobal = globalsById.get(effect.globalId);
     const name = storyGlobal?.name || "Unknown";
+    if (storyGlobal?.valueType === "number" && effect.operator === "change") {
+      const numValue = effect.value as number;
+      const sign = numValue >= 0 ? "+" : "";
+      return `${name} ${sign}${numValue}`;
+    }
     return `${name} = ${effect.value}`;
   });
 

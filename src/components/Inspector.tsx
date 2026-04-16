@@ -32,6 +32,7 @@ export default function Inspector({ onCollapse }: InspectorProps) {
   const removeChoiceEffect = useEditorStore((state) => state.removeChoiceEffect);
   const updateChoiceEffect = useEditorStore((state) => state.updateChoiceEffect);
   const updateChoiceEffectGlobal = useEditorStore((state) => state.updateChoiceEffectGlobal);
+  const updateChoiceEffectOperator = useEditorStore((state) => state.updateChoiceEffectOperator);
   const setStartNode = useEditorStore((state) => state.setStartNode);
   const [tagInput, setTagInput] = useState("");
   const globalsById = useMemo(
@@ -311,6 +312,25 @@ export default function Inspector({ onCollapse }: InspectorProps) {
                                 ))}
                               </select>
                             </label>
+
+                            {effectGlobal?.valueType === "number" ? (
+                              <label className="field">
+                                <span>Operator</span>
+                                <select
+                                  value={effect.operator === "change" ? "change" : "set"}
+                                  onChange={(event) =>
+                                    updateChoiceEffectOperator(
+                                      { nodeId: selectedNode.id, choiceId: choice.id },
+                                      index,
+                                      event.target.value as "set" | "change"
+                                    )
+                                  }
+                                >
+                                  <option value="set">Set</option>
+                                  <option value="change">Change</option>
+                                </select>
+                              </label>
+                            ) : null}
 
                             <label className="field">
                               <span>Value</span>
