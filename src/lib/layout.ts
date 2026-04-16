@@ -1,9 +1,10 @@
 import dagre from "@dagrejs/dagre";
+import { getChoiceRouteTargets } from "./conditions";
 import type { StoryNode, StoryProject, XYPosition } from "../types/story";
 
 const NODE_WIDTH = 260;
 const BASE_NODE_HEIGHT = 132;
-const CHOICE_HEIGHT = 34;
+const CHOICE_HEIGHT = 40;
 const BODY_LINE_HEIGHT = 18;
 const CHARS_PER_LINE = 34;
 const TAG_ROW_HEIGHT = 28;
@@ -11,7 +12,18 @@ const TAG_ROW_HEIGHT = 28;
 function estimateNodeHeight(node: StoryNode): number {
   const bodyLines = Math.max(1, Math.ceil((node.body.trim().length || 1) / CHARS_PER_LINE));
   const tagHeight = node.tags.length > 0 ? TAG_ROW_HEIGHT : 0;
-  return BASE_NODE_HEIGHT + tagHeight + node.choices.length * CHOICE_HEIGHT + bodyLines * BODY_LINE_HEIGHT;
+  const choiceSummaryHeight = node.choices.reduce(
+    (total, choice) =>
+      total + (choice.visibilityCondition || choice.route.mode === "conditional" ? 20 : 0),
+    0
+  );
+  return (
+    BASE_NODE_HEIGHT +
+    tagHeight +
+    node.choices.length * CHOICE_HEIGHT +
+    choiceSummaryHeight +
+    bodyLines * BODY_LINE_HEIGHT
+  );
 }
 
 function buildStableNodeOrder(project: StoryProject): string[] {
@@ -35,8 +47,10 @@ function buildStableNodeOrder(project: StoryProject): string[] {
     }
 
     for (const choice of node.choices) {
-      if (choice.targetNodeId && !visited.has(choice.targetNodeId)) {
-        queue.push(choice.targetNodeId);
+      for (const targetNodeId of getChoiceRouteTargets(choice.route)) {
+        if (!visited.has(targetNodeId)) {
+          queue.push(targetNodeId);
+        }
       }
     }
   }
@@ -86,11 +100,9 @@ export function buildAutoLayout(project: StoryProject): Record<string, XYPositio
 
   for (const node of project.nodes) {
     for (const choice of node.choices) {
-      if (!choice.targetNodeId) {
-        continue;
+      for (const targetNodeId of getChoiceRouteTargets(choice.route)) {
+        graph.setEdge(node.id, targetNodeId);
       }
-
-      graph.setEdge(node.id, choice.targetNodeId);
     }
   }
 

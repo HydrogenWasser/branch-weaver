@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isChoiceVisible, resolveChoiceTargetNodeId } from "../lib/conditions";
 import type { StoryNode, StoryProject } from "../types/story";
 
 type PreviewPlayerProps = {
@@ -13,6 +14,14 @@ function usePreviewNodeMap(project: StoryProject): Map<string, StoryNode> {
 
 export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerProps) {
   const nodeMap = usePreviewNodeMap(project);
+  const globalsById = useMemo(
+    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
+    [project.globals]
+  );
+  const runtimeGlobals = useMemo(
+    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue])),
+    [project.globals]
+  );
   const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
@@ -44,6 +53,9 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
 
   const currentNodeId = history[history.length - 1] ?? project.metadata.startNodeId;
   const currentNode = nodeMap.get(currentNodeId);
+  const visibleChoices = currentNode
+    ? currentNode.choices.filter((choice) => isChoiceVisible(choice, globalsById, runtimeGlobals))
+    : [];
 
   const handleRestart = () => {
     setHistory([project.metadata.startNodeId]);
@@ -92,9 +104,10 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
             </div>
 
             <div className="preview-player__choices">
-              {currentNode.choices.length > 0 ? (
-                currentNode.choices.map((choice) => {
-                  const missingTarget = !choice.targetNodeId || !nodeMap.has(choice.targetNodeId);
+              {visibleChoices.length > 0 ? (
+                visibleChoices.map((choice) => {
+                  const resolvedTargetNodeId = resolveChoiceTargetNodeId(choice, globalsById, runtimeGlobals);
+                  const missingTarget = !resolvedTargetNodeId || !nodeMap.has(resolvedTargetNodeId);
 
                   return (
                     <button
@@ -102,7 +115,7 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
                       type="button"
                       className="preview-choice"
                       disabled={missingTarget}
-                      onClick={() => handleAdvance(choice.targetNodeId)}
+                      onClick={() => handleAdvance(resolvedTargetNodeId)}
                     >
                       <strong>{choice.text || "Untitled choice"}</strong>
                       <span>{missingTarget ? "Unlinked choice" : "Continue"}</span>

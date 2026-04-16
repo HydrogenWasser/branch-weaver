@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
+import ConditionEditor from "./ConditionEditor";
+import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
 import { NODE_COLOR_THEMES, TAG_SUGGESTIONS } from "../lib/nodeAppearance";
+import { createConditionForGlobal } from "../lib/story";
 import { useEditorStore } from "../store/editorStore";
 
 type InspectorProps = {
@@ -17,8 +20,20 @@ export default function Inspector({ onCollapse }: InspectorProps) {
   const removeChoice = useEditorStore((state) => state.removeChoice);
   const updateChoiceText = useEditorStore((state) => state.updateChoiceText);
   const connectChoice = useEditorStore((state) => state.connectChoice);
+  const setChoiceVisibilityCondition = useEditorStore((state) => state.setChoiceVisibilityCondition);
+  const setChoiceRouteMode = useEditorStore((state) => state.setChoiceRouteMode);
+  const addConditionalBranch = useEditorStore((state) => state.addConditionalBranch);
+  const removeConditionalBranch = useEditorStore((state) => state.removeConditionalBranch);
+  const moveConditionalBranch = useEditorStore((state) => state.moveConditionalBranch);
+  const updateConditionalBranchCondition = useEditorStore((state) => state.updateConditionalBranchCondition);
+  const updateConditionalBranchTarget = useEditorStore((state) => state.updateConditionalBranchTarget);
+  const updateConditionalFallbackTarget = useEditorStore((state) => state.updateConditionalFallbackTarget);
   const setStartNode = useEditorStore((state) => state.setStartNode);
   const [tagInput, setTagInput] = useState("");
+  const globalsById = useMemo(
+    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
+    [project.globals]
+  );
 
   const selectedNode =
     selection?.type === "node"
@@ -175,11 +190,14 @@ export default function Inspector({ onCollapse }: InspectorProps) {
         <h3>Choices</h3>
         {selectedNode.choices.length === 0 ? <p>This node has no outgoing choices yet.</p> : null}
         <div className="choice-list">
-          {selectedNode.choices.map((choice) => (
-            <div
-              key={choice.id}
-              className={`choice-editor${selectedChoice?.id === choice.id ? " is-selected" : ""}`}
-            >
+          {selectedNode.choices.map((choice) => {
+            const conditionalRoute = choice.route.mode === "conditional" ? choice.route : null;
+
+            return (
+              <div
+                key={choice.id}
+                className={`choice-editor${selectedChoice?.id === choice.id ? " is-selected" : ""}`}
+              >
               <label className="field">
                 <span>Choice Text</span>
                 <input
@@ -190,31 +208,239 @@ export default function Inspector({ onCollapse }: InspectorProps) {
                   placeholder="Choice text"
                 />
               </label>
-              <label className="field">
-                <span>Target Node</span>
-                <select
-                  value={choice.targetNodeId ?? ""}
-                  onChange={(event) =>
-                    connectChoice(
-                      { nodeId: selectedNode.id, choiceId: choice.id },
-                      event.target.value || null
-                    )
-                  }
-                >
-                  <option value="">Unlinked</option>
-                  {otherNodes.map((node) => (
-                    <option key={node.id} value={node.id}>
-                      {node.title || node.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="choice-editor__section">
+                <div className="panel__header">
+                  <h3>Visibility</h3>
+                  <button
+                    type="button"
+                    className={choice.visibilityCondition ? "is-active" : ""}
+                    disabled={project.globals.length === 0 && !choice.visibilityCondition}
+                    onClick={() => {
+                      const choiceSelection = { nodeId: selectedNode.id, choiceId: choice.id };
+
+                      if (choice.visibilityCondition) {
+                        setChoiceVisibilityCondition(choiceSelection, null);
+                        return;
+                      }
+
+                      const nextCondition = createConditionForGlobal(project.globals[0]);
+                      if (nextCondition) {
+                        setChoiceVisibilityCondition(choiceSelection, nextCondition);
+                      }
+                    }}
+                  >
+                    {choice.visibilityCondition ? "Disable" : "Enable"}
+                  </button>
+                </div>
+
+                {choice.visibilityCondition ? (
+                  <ConditionEditor
+                    condition={choice.visibilityCondition}
+                    globals={project.globals}
+                    onChange={(condition) =>
+                      setChoiceVisibilityCondition(
+                        { nodeId: selectedNode.id, choiceId: choice.id },
+                        condition
+                      )
+                    }
+                  />
+                ) : (
+                  <p className="choice-editor__hint">
+                    {project.globals.length === 0
+                      ? "Add a global first to enable visibility conditions."
+                      : "This choice is always visible."}
+                  </p>
+                )}
+              </div>
+
+              <div className="choice-editor__section">
+                <label className="field">
+                  <span>Routing Mode</span>
+                  <select
+                    value={choice.route.mode}
+                    onChange={(event) => {
+                      const nextMode = event.target.value as "direct" | "conditional";
+
+                      if (
+                        nextMode === "direct" &&
+                        choice.route.mode === "conditional" &&
+                        choice.route.branches.length > 0 &&
+                        !window.confirm(
+                          "Switching back to direct routing will remove all conditional branches and keep the else target. Continue?"
+                        )
+                      ) {
+                        return;
+                      }
+
+                      setChoiceRouteMode({ nodeId: selectedNode.id, choiceId: choice.id }, nextMode);
+                    }}
+                  >
+                    <option value="direct">Direct</option>
+                    <option value="conditional">Conditional</option>
+                  </select>
+                </label>
+
+                {choice.route.mode === "direct" ? (
+                  <label className="field">
+                    <span>Target Node</span>
+                    <select
+                      value={choice.route.targetNodeId ?? ""}
+                      onChange={(event) =>
+                        connectChoice(
+                          { nodeId: selectedNode.id, choiceId: choice.id },
+                          event.target.value || null
+                        )
+                      }
+                    >
+                      <option value="">Unlinked</option>
+                      {otherNodes.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node.title || node.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : conditionalRoute ? (
+                  <div className="conditional-route-editor">
+                    <div className="choice-editor__actions">
+                      <button
+                        type="button"
+                        disabled={project.globals.length === 0}
+                        onClick={() => addConditionalBranch({ nodeId: selectedNode.id, choiceId: choice.id })}
+                      >
+                        Add Rule
+                      </button>
+                    </div>
+
+                    {conditionalRoute.branches.length > 0 ? (
+                      <div className="conditional-route-editor__list">
+                        {conditionalRoute.branches.map((branch, index) => (
+                          <div key={`${choice.id}-${index}`} className="conditional-branch">
+                            <div className="panel__header">
+                              <h3>{index === 0 ? "If" : "Else If"}</h3>
+                              <div className="choice-editor__actions">
+                                <button
+                                  type="button"
+                                  disabled={index === 0}
+                                  onClick={() =>
+                                    moveConditionalBranch(
+                                      { nodeId: selectedNode.id, choiceId: choice.id },
+                                      index,
+                                      -1
+                                    )
+                                  }
+                                >
+                                  Up
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={index === conditionalRoute.branches.length - 1}
+                                  onClick={() =>
+                                    moveConditionalBranch(
+                                      { nodeId: selectedNode.id, choiceId: choice.id },
+                                      index,
+                                      1
+                                    )
+                                  }
+                                >
+                                  Down
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeConditionalBranch(
+                                      { nodeId: selectedNode.id, choiceId: choice.id },
+                                      index
+                                    )
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+
+                            <ConditionEditor
+                              condition={branch.condition}
+                              globals={project.globals}
+                              onChange={(condition) =>
+                                updateConditionalBranchCondition(
+                                  { nodeId: selectedNode.id, choiceId: choice.id },
+                                  index,
+                                  condition
+                                )
+                              }
+                            />
+
+                            <label className="field">
+                              <span>Target Node</span>
+                              <select
+                                value={branch.targetNodeId ?? ""}
+                                onChange={(event) =>
+                                  updateConditionalBranchTarget(
+                                    { nodeId: selectedNode.id, choiceId: choice.id },
+                                    index,
+                                    event.target.value || null
+                                  )
+                                }
+                              >
+                                <option value="">Unlinked</option>
+                                {otherNodes.map((node) => (
+                                  <option key={node.id} value={node.id}>
+                                    {node.title || node.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="choice-editor__hint">
+                        {project.globals.length === 0
+                          ? "Add a global first to create conditional rules."
+                          : "No conditional rules yet. Add one or use the else target below."}
+                      </p>
+                    )}
+
+                    <div className="conditional-branch conditional-branch--fallback">
+                      <div className="panel__header">
+                        <h3>Else</h3>
+                      </div>
+                      <label className="field">
+                        <span>Fallback Target</span>
+                        <select
+                          value={conditionalRoute.fallbackTargetNodeId ?? ""}
+                          onChange={(event) =>
+                            updateConditionalFallbackTarget(
+                              { nodeId: selectedNode.id, choiceId: choice.id },
+                              event.target.value || null
+                            )
+                          }
+                        >
+                          <option value="">Unlinked</option>
+                          {otherNodes.map((node) => (
+                            <option key={node.id} value={node.id}>
+                              {node.title || node.id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <div className="choice-editor__actions">
                 <button
                   type="button"
                   onClick={() => {
+                    const hasConfiguredTarget =
+                      choice.route.mode === "direct"
+                        ? Boolean(choice.route.targetNodeId)
+                        : choice.route.branches.some((branch) => branch.targetNodeId) ||
+                          Boolean(choice.route.fallbackTargetNodeId);
+
                     if (
-                      choice.targetNodeId &&
+                      hasConfiguredTarget &&
                       !window.confirm("This will remove the existing jump target for the choice. Continue?")
                     ) {
                       return;
@@ -225,8 +451,9 @@ export default function Inspector({ onCollapse }: InspectorProps) {
                   Delete Choice
                 </button>
               </div>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -236,7 +463,17 @@ export default function Inspector({ onCollapse }: InspectorProps) {
           <p>
             <strong>{selectedChoice.text || "Untitled choice"}</strong>
           </p>
-          <p>Target: {selectedChoice.targetNodeId ?? "Unlinked"}</p>
+          <p>{formatChoiceSummary(selectedChoice, globalsById) ?? "Direct route with no conditions."}</p>
+          {selectedChoice.visibilityCondition ? (
+            <p>Visible when: {formatConditionSummary(selectedChoice.visibilityCondition, globalsById)}</p>
+          ) : null}
+          <p>
+            Route:
+            {" "}
+            {selectedChoice.route.mode === "direct"
+              ? selectedChoice.route.targetNodeId ?? "Unlinked"
+              : `Conditional (${selectedChoice.route.branches.length} rules + else)`}
+          </p>
         </div>
       ) : null}
     </aside>

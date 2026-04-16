@@ -1,5 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import CanvasGraph from "./components/CanvasGraph";
+import GlobalsPanel from "./components/GlobalsPanel";
 import Inspector from "./components/Inspector";
 import PreviewPlayer from "./components/PreviewPlayer";
 import SearchPanel from "./components/SearchPanel";
@@ -9,12 +10,16 @@ import { buildNodeSearchIndex, searchNodeIndex } from "./lib/search";
 import { openJsonFile, saveJsonFile, saveJsonFileAs } from "./lib/fileIO";
 import { exportValidationErrors, fileNameFromTitle, parseProjectJson, serializeProject } from "./lib/story";
 import { useEditorStore } from "./store/editorStore";
+import type { XYPosition } from "./types/story";
 
 const EMPTY_HIGHLIGHT_SET = new Set<string>();
+const DEFAULT_NEW_NODE_POSITION = { x: 240, y: 240 };
+const DEFAULT_NEW_NODE_SIZE = { width: 260, height: 132 };
 
 export default function App() {
   const [fitRequest, setFitRequest] = useState(0);
   const [fitView, setFitView] = useState<(() => void) | null>(null);
+  const [getViewportCenter, setGetViewportCenter] = useState<(() => XYPosition | null) | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -61,6 +66,9 @@ export default function App() {
   const handleFitReady = useCallback((fit: () => void) => {
     setFitView(() => fit);
   }, []);
+  const handleViewportCenterReady = useCallback((getCenter: () => XYPosition | null) => {
+    setGetViewportCenter(() => getCenter);
+  }, []);
   const focusNode = useCallback(
     (nodeId: string) => {
       setSelection({ type: "node", nodeId });
@@ -69,6 +77,17 @@ export default function App() {
     },
     [setSelection]
   );
+  const handleAddNode = useCallback(() => {
+    const viewportCenter = getViewportCenter?.();
+    const nextPosition = viewportCenter
+      ? {
+          x: Math.round(viewportCenter.x - DEFAULT_NEW_NODE_SIZE.width / 2),
+          y: Math.round(viewportCenter.y - DEFAULT_NEW_NODE_SIZE.height / 2)
+        }
+      : DEFAULT_NEW_NODE_POSITION;
+
+    addNode(nextPosition);
+  }, [addNode, getViewportCenter]);
 
   const handleCreateProject = () => {
     if (dirty && !window.confirm("Discard current unsaved changes and create a new project?")) {
@@ -286,12 +305,15 @@ export default function App() {
                   />
                 </label>
                 <p>Nodes: {project.nodes.length}</p>
+                <p>Globals: {project.globals.length}</p>
                 <p>Save mode: Browser download</p>
               </div>
 
+              <GlobalsPanel />
+
               <div className="panel">
                 <h3>Canvas</h3>
-                <button type="button" onClick={() => addNode({ x: 240, y: 240 })}>
+                <button type="button" onClick={handleAddNode}>
                   New Node
                 </button>
                 <button type="button" onClick={handleAutoLayout}>
@@ -362,6 +384,7 @@ export default function App() {
             focusNodeId={focusNodeId}
             highlightedNodeIds={highlightedNodeIds}
             onFitReady={handleFitReady}
+            onViewportCenterReady={handleViewportCenterReady}
             onRequestFocusNode={focusNode}
           />
           <PreviewPlayer open={previewOpen} project={project} onClose={() => setPreviewOpen(false)} />

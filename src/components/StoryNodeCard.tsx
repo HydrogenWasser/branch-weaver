@@ -1,10 +1,12 @@
 import { memo, useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
+import { formatChoiceSummary } from "../lib/conditions";
 import { getNodeCardStyle } from "../lib/nodeAppearance";
-import type { StoryNode } from "../types/story";
+import type { StoryGlobal, StoryNode } from "../types/story";
 
 export type StoryNodeData = {
   storyNode: StoryNode;
+  globalsById: Map<string, StoryGlobal>;
   isSearchMatch: boolean;
   selectedChoiceId: string | null;
   onNodeBodyClick: (nodeId: string) => void;
@@ -23,7 +25,7 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
     updateNodeInternals(id);
   }, [
     data.storyNode.body,
-    data.storyNode.choices.length,
+    JSON.stringify(data.storyNode.choices),
     data.storyNode.colorToken,
     data.storyNode.tags.join("|"),
     data.storyNode.title,
@@ -65,28 +67,42 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
       </div>
       <div className="story-node-card__choices">
         {data.storyNode.choices.map((choice) => (
-          <div
-            key={choice.id}
-            className={`story-node-card__choice nodrag nopan${
-              data.selectedChoiceId === choice.id ? " is-selected" : ""
-            }`}
-            onClick={(event) => {
-              event.stopPropagation();
-              data.onChoiceClick(data.storyNode.id, choice.id);
-            }}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              data.onChoiceDoubleClick(data.storyNode.id, choice.id, choice.targetNodeId);
-            }}
-          >
-            <span>{choice.text || "Untitled choice"}</span>
-            <Handle
-              id={choice.id}
-              type="source"
-              position={Position.Right}
-              className="story-node-card__handle story-node-card__handle--source"
-            />
-          </div>
+          (() => {
+            const summary = formatChoiceSummary(choice, data.globalsById);
+            const previewTargetNodeId =
+              choice.route.mode === "direct"
+                ? choice.route.targetNodeId
+                : choice.route.fallbackTargetNodeId;
+
+            return (
+              <div
+                key={choice.id}
+                className={`story-node-card__choice nodrag nopan${
+                  data.selectedChoiceId === choice.id ? " is-selected" : ""
+                }`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onChoiceClick(data.storyNode.id, choice.id);
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  data.onChoiceDoubleClick(data.storyNode.id, choice.id, previewTargetNodeId);
+                }}
+              >
+                <div className="story-node-card__choice-content">
+                  <span>{choice.text || "Untitled choice"}</span>
+                  {summary ? <small>{summary}</small> : null}
+                </div>
+                <Handle
+                  id={choice.id}
+                  type="source"
+                  position={Position.Right}
+                  isConnectable={choice.route.mode === "direct"}
+                  className="story-node-card__handle story-node-card__handle--source"
+                />
+              </div>
+            );
+          })()
         ))}
       </div>
     </div>

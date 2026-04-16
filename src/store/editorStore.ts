@@ -3,17 +3,24 @@ import { exampleProject } from "../data/exampleProject";
 import {
   createChoice,
   createEmptyProject,
+  createGlobal,
   createNode,
   duplicateProject,
   exportValidationErrors,
   fileNameFromTitle,
-  getChoiceBySelection
+  getChoiceBySelection,
+  getGlobalById,
+  isGlobalReferenced,
+  normalizeConditionForGlobal
 } from "../lib/story";
+import { createDefaultCondition, replaceRouteTargetNodeId } from "../lib/conditions";
 import { normalizeNodeTag, sortNodeTags } from "../lib/nodeTags";
 import type {
   ChoiceSelection,
   EditorSelection,
+  GlobalValueType,
   NodeColorToken,
+  StoryCondition,
   StoryProject,
   ViewportState,
   XYPosition
@@ -27,6 +34,8 @@ type NodePatch = {
   title?: string;
   body?: string;
 };
+
+type ChoiceRouteMode = "direct" | "conditional";
 
 type EditorStore = {
   project: StoryProject;
@@ -47,6 +56,11 @@ type EditorStore = {
   setError: (message: string | null) => void;
   setSelection: (selection: EditorSelection) => void;
   setViewport: (viewport: ViewportState) => void;
+  addGlobal: (valueType: GlobalValueType) => void;
+  updateGlobalName: (globalId: string, name: string) => void;
+  updateGlobalValueType: (globalId: string, valueType: GlobalValueType) => void;
+  updateGlobalDefaultValue: (globalId: string, defaultValue: boolean | number) => void;
+  removeGlobal: (globalId: string) => void;
   addNode: (position?: XYPosition) => void;
   removeNode: (nodeId: string) => void;
   updateNode: (nodeId: string, patch: NodePatch) => void;
@@ -59,6 +73,22 @@ type EditorStore = {
   removeChoice: (selection: ChoiceSelection) => void;
   updateChoiceText: (selection: ChoiceSelection, text: string) => void;
   connectChoice: (selection: ChoiceSelection, targetNodeId: string | null) => void;
+  setChoiceVisibilityCondition: (selection: ChoiceSelection, condition: StoryCondition | null) => void;
+  setChoiceRouteMode: (selection: ChoiceSelection, mode: ChoiceRouteMode) => void;
+  addConditionalBranch: (selection: ChoiceSelection) => void;
+  removeConditionalBranch: (selection: ChoiceSelection, index: number) => void;
+  moveConditionalBranch: (selection: ChoiceSelection, index: number, direction: -1 | 1) => void;
+  updateConditionalBranchCondition: (
+    selection: ChoiceSelection,
+    index: number,
+    condition: StoryCondition
+  ) => void;
+  updateConditionalBranchTarget: (
+    selection: ChoiceSelection,
+    index: number,
+    targetNodeId: string | null
+  ) => void;
+  updateConditionalFallbackTarget: (selection: ChoiceSelection, targetNodeId: string | null) => void;
   setStartNode: (nodeId: string) => void;
   deleteSelection: () => void;
   undo: () => void;
@@ -111,6 +141,25 @@ function syncStartTag(project: StoryProject, nodeId: string): StoryProject {
       ? { ...node, tags: sortNodeTags([...nextTags, "Start"]) }
       : { ...node, tags: nextTags };
   });
+
+  return project;
+}
+
+function updateChoiceInProject(
+  project: StoryProject,
+  selection: ChoiceSelection,
+  updateChoice: (choice: StoryProject["nodes"][number]["choices"][number]) => StoryProject["nodes"][number]["choices"][number]
+): StoryProject {
+  project.nodes = project.nodes.map((node) =>
+    node.id === selection.nodeId
+      ? {
+          ...node,
+          choices: node.choices.map((choice) =>
+            choice.id === selection.choiceId ? updateChoice(choice) : choice
+          )
+        }
+      : node
+  );
 
   return project;
 }
@@ -182,6 +231,88 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setSelection: (selection) =>
     set((state) => (isSameSelection(state.selection, selection) ? state : { selection })),
   setViewport: (viewport) => set({ viewport }),
+  addGlobal: (valueType) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        project.globals.push(createGlobal(valueType));
+        return { project };
+      })
+    ),
+  updateGlobalName: (globalId, name) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        project.globals = project.globals.map((storyGlobal) =>
+          storyGlobal.id === globalId ? { ...storyGlobal, name } : storyGlobal
+        );
+        return { project };
+      })
+    ),
+  updateGlobalValueType: (globalId, valueType) =>
+    set((state) => {
+      if (isGlobalReferenced(state.project, globalId)) {
+        return {
+          ...state,
+          lastError: "Remove conditions that reference this global before changing its type."
+        };
+      }
+
+      return withProjectMutation(state, (project) => {
+        project.globals = project.globals.map((storyGlobal) => {
+          if (storyGlobal.id !== globalId) {
+            return storyGlobal;
+          }
+
+          return valueType === "boolean"
+            ? {
+                ...storyGlobal,
+                valueType,
+                defaultValue: false
+              }
+            : {
+                ...storyGlobal,
+                valueType,
+                defaultValue: 0
+              };
+        });
+        return { project };
+      });
+    }),
+  updateGlobalDefaultValue: (globalId, defaultValue) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        project.globals = project.globals.map((storyGlobal) => {
+          if (storyGlobal.id !== globalId) {
+            return storyGlobal;
+          }
+
+          return storyGlobal.valueType === "boolean"
+            ? {
+                ...storyGlobal,
+                defaultValue: defaultValue === true
+              }
+            : {
+                ...storyGlobal,
+                defaultValue:
+                  typeof defaultValue === "number" && Number.isFinite(defaultValue) ? defaultValue : 0
+              };
+        });
+        return { project };
+      })
+    ),
+  removeGlobal: (globalId) =>
+    set((state) => {
+      if (isGlobalReferenced(state.project, globalId)) {
+        return {
+          ...state,
+          lastError: "This global is still used by one or more conditions. Remove those references first."
+        };
+      }
+
+      return withProjectMutation(state, (project) => {
+        project.globals = project.globals.filter((storyGlobal) => storyGlobal.id !== globalId);
+        return { project };
+      });
+    }),
   addNode: (position) =>
     set((state) =>
       withProjectMutation(state, (project) => {
@@ -200,9 +331,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         project.nodes = project.nodes.filter((node) => node.id !== nodeId);
 
         for (const node of project.nodes) {
-          node.choices = node.choices.map((choice) =>
-            choice.targetNodeId === nodeId ? { ...choice, targetNodeId: null } : choice
-          );
+          node.choices = node.choices.map((choice) => ({
+            ...choice,
+            route: replaceRouteTargetNodeId(choice.route, nodeId)
+          }));
         }
 
         if (project.metadata.startNodeId === nodeId && fallbackNode) {
@@ -366,32 +498,261 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   updateChoiceText: (selection, text) =>
     set((state) =>
       withProjectMutation(state, (project) => {
-        project.nodes = project.nodes.map((node) =>
-          node.id === selection.nodeId
-            ? {
-                ...node,
-                choices: node.choices.map((choice) =>
-                  choice.id === selection.choiceId ? { ...choice, text } : choice
-                )
-              }
-            : node
-        );
+        updateChoiceInProject(project, selection, (choice) => ({ ...choice, text }));
         return { project, selection: { type: "choice", ...selection } };
       })
     ),
   connectChoice: (selection, targetNodeId) =>
     set((state) =>
       withProjectMutation(state, (project) => {
-        project.nodes = project.nodes.map((node) =>
-          node.id === selection.nodeId
+        updateChoiceInProject(project, selection, (choice) =>
+          choice.route.mode === "direct"
             ? {
-                ...node,
-                choices: node.choices.map((choice) =>
-                  choice.id === selection.choiceId ? { ...choice, targetNodeId } : choice
-                )
+                ...choice,
+                route: {
+                  mode: "direct",
+                  targetNodeId
+                }
               }
-            : node
+            : choice
         );
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  setChoiceVisibilityCondition: (selection, condition) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        const normalizedCondition = condition
+          ? normalizeConditionForGlobal(condition, getGlobalById(project, condition.globalId))
+          : null;
+
+        updateChoiceInProject(project, selection, (choice) => ({
+          ...choice,
+          visibilityCondition: normalizedCondition
+        }));
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  setChoiceRouteMode: (selection, mode) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => {
+          if (mode === choice.route.mode) {
+            return choice;
+          }
+
+          if (mode === "conditional") {
+            return {
+              ...choice,
+              route: {
+                mode: "conditional",
+                branches: [],
+                fallbackTargetNodeId:
+                  choice.route.mode === "direct" ? choice.route.targetNodeId : choice.route.fallbackTargetNodeId
+              }
+            };
+          }
+
+          return {
+            ...choice,
+            route: {
+              mode: "direct",
+              targetNodeId:
+                choice.route.mode === "conditional"
+                  ? choice.route.fallbackTargetNodeId
+                  : choice.route.targetNodeId
+            }
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  addConditionalBranch: (selection) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        const firstGlobal = project.globals[0];
+        if (!firstGlobal) {
+          return { project, selection: { type: "choice", ...selection } };
+        }
+
+        updateChoiceInProject(project, selection, (choice) => {
+          if (choice.route.mode !== "conditional") {
+            return choice;
+          }
+
+          return {
+            ...choice,
+            route: {
+              ...choice.route,
+              branches: [
+                ...choice.route.branches,
+                {
+                  condition: createDefaultCondition(firstGlobal),
+                  targetNodeId: null
+                }
+              ]
+            }
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  removeConditionalBranch: (selection, index) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => {
+          if (choice.route.mode !== "conditional") {
+            return choice;
+          }
+
+          return {
+            ...choice,
+            route: {
+              ...choice.route,
+              branches: choice.route.branches.filter((_, branchIndex) => branchIndex !== index)
+            }
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  moveConditionalBranch: (selection, index, direction) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => {
+          if (choice.route.mode !== "conditional") {
+            return choice;
+          }
+
+          const nextIndex = index + direction;
+          if (nextIndex < 0 || nextIndex >= choice.route.branches.length) {
+            return choice;
+          }
+
+          const branches = [...choice.route.branches];
+          const [branch] = branches.splice(index, 1);
+          branches.splice(nextIndex, 0, branch);
+
+          return {
+            ...choice,
+            route: {
+              ...choice.route,
+              branches
+            }
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  updateConditionalBranchCondition: (selection, index, condition) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        const normalizedCondition = normalizeConditionForGlobal(
+          condition,
+          getGlobalById(project, condition.globalId)
+        );
+        if (!normalizedCondition) {
+          return {
+            project,
+            selection: { type: "choice", ...selection }
+          };
+        }
+
+        updateChoiceInProject(project, selection, (choice) => {
+          if (choice.route.mode !== "conditional") {
+            return choice;
+          }
+
+          return {
+            ...choice,
+            route: {
+              ...choice.route,
+              branches: choice.route.branches.map((branch, branchIndex) =>
+                branchIndex === index
+                  ? {
+                      ...branch,
+                      condition: normalizedCondition
+                    }
+                  : branch
+              )
+            }
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  updateConditionalBranchTarget: (selection, index, targetNodeId) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) => {
+          if (choice.route.mode !== "conditional") {
+            return choice;
+          }
+
+          return {
+            ...choice,
+            route: {
+              ...choice.route,
+              branches: choice.route.branches.map((branch, branchIndex) =>
+                branchIndex === index
+                  ? {
+                      ...branch,
+                      targetNodeId
+                    }
+                  : branch
+              )
+            }
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "choice", ...selection }
+        };
+      })
+    ),
+  updateConditionalFallbackTarget: (selection, targetNodeId) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        updateChoiceInProject(project, selection, (choice) =>
+          choice.route.mode === "conditional"
+            ? {
+                ...choice,
+                route: {
+                  ...choice.route,
+                  fallbackTargetNodeId: targetNodeId
+                }
+              }
+            : choice
+        );
+
         return {
           project,
           selection: { type: "choice", ...selection }
@@ -471,5 +832,10 @@ export function getSelectedChoiceTarget(): string | null {
     return null;
   }
 
-  return getChoiceBySelection(state.project, state.selection)?.targetNodeId ?? null;
+  const choice = getChoiceBySelection(state.project, state.selection);
+  if (!choice) {
+    return null;
+  }
+
+  return choice.route.mode === "direct" ? choice.route.targetNodeId : choice.route.fallbackTargetNodeId;
 }
