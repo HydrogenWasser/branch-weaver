@@ -69,6 +69,8 @@ type EditorStore = {
   addNodeTag: (nodeId: string, tag: string) => void;
   removeNodeTag: (nodeId: string, tag: string) => void;
   setNodeColor: (nodeId: string, colorToken: NodeColorToken) => void;
+  addNodeFileTrigger: (nodeId: string, fileName: string) => void;
+  removeNodeFileTrigger: (nodeId: string, fileName: string) => void;
   addChoice: (nodeId: string) => void;
   removeChoice: (selection: ChoiceSelection) => void;
   updateChoiceText: (selection: ChoiceSelection, text: string) => void;
@@ -470,6 +472,53 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       withProjectMutation(state, (project) => {
         project.nodes = project.nodes.map((node) =>
           node.id === nodeId ? { ...node, colorToken } : node
+        );
+
+        return {
+          project,
+          selection: { type: "node", nodeId }
+        };
+      })
+    ),
+  addNodeFileTrigger: (nodeId, fileName) =>
+    set((state) => {
+      const trimmed = fileName.trim();
+      if (!trimmed) {
+        return state;
+      }
+
+      return withProjectMutation(state, (project) => {
+        project.nodes = project.nodes.map((node) => {
+          if (node.id !== nodeId) {
+            return node;
+          }
+
+          if (node.fileTriggers.includes(trimmed)) {
+            return node;
+          }
+
+          return {
+            ...node,
+            fileTriggers: [...node.fileTriggers, trimmed]
+          };
+        });
+
+        return {
+          project,
+          selection: { type: "node", nodeId }
+        };
+      });
+    }),
+  removeNodeFileTrigger: (nodeId, fileName) =>
+    set((state) =>
+      withProjectMutation(state, (project) => {
+        project.nodes = project.nodes.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                fileTriggers: node.fileTriggers.filter((name) => name !== fileName)
+              }
+            : node
         );
 
         return {

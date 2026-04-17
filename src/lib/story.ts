@@ -61,7 +61,8 @@ export function createNode(position = { x: 80, y: 80 }): StoryNode {
     position,
     tags: [],
     colorToken: DEFAULT_NODE_COLOR,
-    choices: []
+    choices: [],
+    fileTriggers: []
   };
 }
 
@@ -141,6 +142,7 @@ function migrateProject(input: StoryProjectInput): StoryProject {
     })) as StoryGlobal[],
     nodes: input.nodes.map((node) => ({
       ...node,
+      fileTriggers: [],
       choices: node.choices.map((choice) => migrateChoice(choice))
     }))
   };
@@ -156,10 +158,20 @@ function normalizeNode(node: StoryNode): StoryNode {
     }
   }
 
+  const uniqueFileTriggers = new Set<string>();
+
+  for (const rawFileTrigger of node.fileTriggers ?? []) {
+    const trimmed = rawFileTrigger.trim();
+    if (trimmed) {
+      uniqueFileTriggers.add(trimmed);
+    }
+  }
+
   return {
     ...node,
     tags: sortNodeTags([...uniqueTags]),
-    colorToken: nodeColorTokens.includes(node.colorToken) ? node.colorToken : DEFAULT_NODE_COLOR
+    colorToken: nodeColorTokens.includes(node.colorToken) ? node.colorToken : DEFAULT_NODE_COLOR,
+    fileTriggers: [...uniqueFileTriggers]
   };
 }
 

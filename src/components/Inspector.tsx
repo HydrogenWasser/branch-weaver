@@ -16,6 +16,8 @@ export default function Inspector({ onCollapse }: InspectorProps) {
   const addNodeTag = useEditorStore((state) => state.addNodeTag);
   const removeNodeTag = useEditorStore((state) => state.removeNodeTag);
   const setNodeColor = useEditorStore((state) => state.setNodeColor);
+  const addNodeFileTrigger = useEditorStore((state) => state.addNodeFileTrigger);
+  const removeNodeFileTrigger = useEditorStore((state) => state.removeNodeFileTrigger);
   const addChoice = useEditorStore((state) => state.addChoice);
   const removeChoice = useEditorStore((state) => state.removeChoice);
   const updateChoiceText = useEditorStore((state) => state.updateChoiceText);
@@ -35,6 +37,7 @@ export default function Inspector({ onCollapse }: InspectorProps) {
   const updateChoiceEffectOperator = useEditorStore((state) => state.updateChoiceEffectOperator);
   const setStartNode = useEditorStore((state) => state.setStartNode);
   const [tagInput, setTagInput] = useState("");
+  const [fileTriggerInput, setFileTriggerInput] = useState("");
   const globalsById = useMemo(
     () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
     [project.globals]
@@ -74,6 +77,15 @@ export default function Inspector({ onCollapse }: InspectorProps) {
     }
 
     setTagInput("");
+  };
+
+  const handleAddFileTrigger = (fileName: string) => {
+    if (!selectedNode) {
+      return;
+    }
+
+    addNodeFileTrigger(selectedNode.id, fileName);
+    setFileTriggerInput("");
   };
 
   if (!selectedNode) {
@@ -172,6 +184,43 @@ export default function Inspector({ onCollapse }: InspectorProps) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="panel">
+        <h3>File Triggers</h3>
+        <div className="file-trigger-editor__list">
+          {selectedNode.fileTriggers.length > 0 ? (
+            selectedNode.fileTriggers.map((fileName) => (
+              <div key={fileName} className="file-trigger-chip">
+                <span>{fileName}</span>
+                <button type="button" onClick={() => removeNodeFileTrigger(selectedNode.id, fileName)}>
+                  Remove
+                </button>
+              </div>
+            ))
+          ) : (
+            <p>This node has no file triggers yet.</p>
+          )}
+        </div>
+        <label className="field">
+          <span>Add File Trigger</span>
+          <div className="file-trigger-editor__input-row">
+            <input
+              value={fileTriggerInput}
+              onChange={(event) => setFileTriggerInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleAddFileTrigger(fileTriggerInput);
+                }
+              }}
+              placeholder="e.g. chapter_01.txt"
+            />
+            <button type="button" onClick={() => handleAddFileTrigger(fileTriggerInput)}>
+              Add
+            </button>
+          </div>
+        </label>
       </div>
 
       <div className="panel">

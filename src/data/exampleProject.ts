@@ -28,6 +28,7 @@ export const exampleProject: StoryProject = {
       position: { x: 100, y: 120 },
       tags: ["Start", "Core"],
       colorToken: "amber",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_door",
@@ -90,6 +91,7 @@ export const exampleProject: StoryProject = {
       position: { x: 460, y: 40 },
       tags: ["Core"],
       colorToken: "clay",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_return",
@@ -110,6 +112,7 @@ export const exampleProject: StoryProject = {
       position: { x: 850, y: 20 },
       tags: ["End"],
       colorToken: "sage",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_open_return",
@@ -130,6 +133,7 @@ export const exampleProject: StoryProject = {
       position: { x: 460, y: 250 },
       tags: ["Core"],
       colorToken: "slate",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_note",
@@ -150,6 +154,7 @@ export const exampleProject: StoryProject = {
       position: { x: 460, y: 430 },
       tags: ["Core"],
       colorToken: "sand",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_panel_back",
@@ -172,6 +177,7 @@ export const exampleProject: StoryProject = {
       position: { x: 820, y: 250 },
       tags: ["End"],
       colorToken: "rosewood",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_restart",
@@ -192,6 +198,7 @@ export const exampleProject: StoryProject = {
       position: { x: 850, y: 220 },
       tags: ["End"],
       colorToken: "rosewood",
+      fileTriggers: [],
       choices: [
         {
           id: "choice_alarm_back",

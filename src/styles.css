@@ -416,18 +416,21 @@ textarea {
 
 .tag-editor__list,
 .tag-editor__suggestions,
-.color-palette {
+.color-palette,
+.file-trigger-editor__list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
 }
 
-.tag-editor__input-row {
+.tag-editor__input-row,
+.file-trigger-editor__input-row {
   display: flex;
   gap: 0.45rem;
 }
 
-.tag-chip {
+.tag-chip,
+.file-trigger-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -437,7 +440,8 @@ textarea {
   background: rgba(255, 248, 236, 0.92);
 }
 
-.tag-chip button {
+.tag-chip button,
+.file-trigger-chip button {
   padding: 0.18rem 0.42rem;
   border-radius: 999px;
 }

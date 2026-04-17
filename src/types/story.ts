@@ -71,6 +71,7 @@ export type StoryNode = {
   tags: string[];
   colorToken: NodeColorToken;
   choices: StoryChoice[];
+  fileTriggers: string[];
 };
 
 export type StoryProject = {
@@ -167,7 +168,8 @@ const nodeSchemaV2 = z.object({
   position: positionSchema,
   tags: z.array(z.string()).default([]),
   colorToken: nodeColorTokenSchema.default("sand"),
-  choices: z.array(choiceSchemaV2)
+  choices: z.array(choiceSchemaV2),
+  fileTriggers: z.array(z.string()).default([])
 });
 
 const nodeSchemaV1 = z.object({
