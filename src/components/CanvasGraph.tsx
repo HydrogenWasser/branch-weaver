@@ -26,6 +26,7 @@ type CanvasGraphProps = {
   onFitReady: (fit: () => void) => void;
   onViewportCenterReady: (getViewportCenter: () => XYPosition | null) => void;
   onRequestFocusNode: (nodeId: string) => void;
+  onRequestEditChoice: (nodeId: string, choiceId: string) => void;
 };
 
 const nodeTypes = {
@@ -48,7 +49,8 @@ export default function CanvasGraph({
   highlightedNodeIds,
   onFitReady,
   onViewportCenterReady,
-  onRequestFocusNode
+  onRequestFocusNode,
+  onRequestEditChoice
 }: CanvasGraphProps) {
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -72,16 +74,10 @@ export default function CanvasGraph({
   }, [setSelection]);
   const handleChoiceDoubleClick = useCallback((
     nodeId: string,
-    choiceId: string,
-    targetNodeId: string | null
+    choiceId: string
   ) => {
-    if (!targetNodeId) {
-      setSelection({ type: "choice", nodeId, choiceId });
-      return;
-    }
-
-    onRequestFocusNode(targetNodeId);
-  }, [onRequestFocusNode, setSelection]);
+    onRequestEditChoice(nodeId, choiceId);
+  }, [onRequestEditChoice]);
 
   const projectNodes = useMemo<Node[]>(
     () =>

@@ -20,7 +20,7 @@ export default function SearchPanel({
   return (
     <div className="panel">
       <div className="panel__header">
-        <h2>Search</h2>
+        <h3>Search</h3>
         <span className="panel__meta">
           {resultCount}/{totalCount}
         </span>

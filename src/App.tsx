@@ -1,7 +1,9 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import CanvasGraph from "./components/CanvasGraph";
+import GlobalsEditor from "./components/GlobalsEditor";
 import GlobalsPanel from "./components/GlobalsPanel";
 import Inspector from "./components/Inspector";
+import DraggablePanel from "./components/DraggablePanel";
 import PreviewPlayer from "./components/PreviewPlayer";
 import SearchPanel from "./components/SearchPanel";
 import TopBar from "./components/TopBar";
@@ -15,6 +17,7 @@ import type { XYPosition } from "./types/story";
 const EMPTY_HIGHLIGHT_SET = new Set<string>();
 const DEFAULT_NEW_NODE_POSITION = { x: 240, y: 240 };
 const DEFAULT_NEW_NODE_SIZE = { width: 260, height: 132 };
+const DEFAULT_SIDEBAR_ORDER = ["globals", "canvas", "search", "export-checks"];
 
 export default function App() {
   const [fitRequest, setFitRequest] = useState(0);
@@ -24,8 +27,18 @@ export default function App() {
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [globalsEditorOpen, setGlobalsEditorOpen] = useState(false);
+  const [choicesEditorOpen, setChoicesEditorOpen] = useState(false);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [sidebarOrder, setSidebarOrder] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("branch-weaver:sidebar-panels");
+      return stored ? JSON.parse(stored) : DEFAULT_SIDEBAR_ORDER;
+    } catch {
+      return DEFAULT_SIDEBAR_ORDER;
+    }
+  });
 
   const project = useEditorStore((state) => state.project);
   const dirty = useEditorStore((state) => state.dirty);
@@ -74,6 +87,14 @@ export default function App() {
       setSelection({ type: "node", nodeId });
       setFocusNodeId(nodeId);
       setFocusRequest((value) => value + 1);
+    },
+    [setSelection]
+  );
+
+  const handleEditChoice = useCallback(
+    (nodeId: string, choiceId: string) => {
+      setSelection({ type: "choice", nodeId, choiceId });
+      setChoicesEditorOpen(true);
     },
     [setSelection]
   );
@@ -191,6 +212,75 @@ export default function App() {
     setFitRequest((value) => value + 1);
   };
 
+  const moveSidebarPanel = useCallback((fromIndex: number, toIndex: number) => {
+    setSidebarOrder((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, removed);
+      localStorage.setItem("branch-weaver:sidebar-panels", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const renderSidebarPanel = (panelId: string) => {
+    switch (panelId) {
+      case "globals":
+        return <GlobalsPanel onOpen={() => setGlobalsEditorOpen(true)} />;
+      case "canvas":
+        return (
+          <div className="panel">
+            <h3>Canvas</h3>
+            <button type="button" onClick={handleAddNode}>
+              New Node
+            </button>
+            <button type="button" onClick={handleAutoLayout}>
+              Auto Layout
+            </button>
+            <button type="button" onClick={() => setFitRequest((value) => value + 1)}>
+              Fit View
+            </button>
+            <button type="button" onClick={() => fitView?.()}>
+              Center Graph
+            </button>
+            <button type="button" onClick={() => setPreviewOpen(true)}>
+              Play Preview
+            </button>
+            <button type="button" disabled={!selection} onClick={handleDeleteSelection}>
+              Delete Selected
+            </button>
+          </div>
+        );
+      case "search":
+        return (
+          <SearchPanel
+            query={searchQuery}
+            resultCount={searchResults.length}
+            totalCount={project.nodes.length}
+            results={searchResults}
+            onQueryChange={setSearchQuery}
+            onSelectNode={focusNode}
+          />
+        );
+      case "export-checks":
+        return (
+          <div className="panel">
+            <h3>Export Checks</h3>
+            {exportIssues.length === 0 ? (
+              <p>Ready to export.</p>
+            ) : (
+              <ul className="issue-list">
+                {exportIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!dirty) {
@@ -258,8 +348,9 @@ export default function App() {
   return (
     <div className="app-shell">
       <TopBar
-        title={projectTitle}
+        projectTitle={project.metadata.title}
         dirty={dirty}
+        onProjectTitleChange={updateProjectTitle}
         onNew={handleCreateProject}
         onOpen={() => void handleOpenProject()}
         onSave={() => void handleSaveProject()}
@@ -294,76 +385,16 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="panel">
-                <h3>Project</h3>
-                <label className="field">
-                  <span>Story Title</span>
-                  <input
-                    value={project.metadata.title}
-                    onChange={(event) => updateProjectTitle(event.target.value)}
-                    placeholder="Project title"
-                  />
-                </label>
-                <p>Nodes: {project.nodes.length}</p>
-                <p>Globals: {project.globals.length}</p>
-                <p>Save mode: Browser download</p>
-              </div>
-
-              <GlobalsPanel />
-
-              <div className="panel">
-                <h3>Canvas</h3>
-                <button type="button" onClick={handleAddNode}>
-                  New Node
-                </button>
-                <button type="button" onClick={handleAutoLayout}>
-                  Auto Layout
-                </button>
-                <button type="button" onClick={() => setFitRequest((value) => value + 1)}>
-                  Fit View
-                </button>
-                <button type="button" onClick={() => fitView?.()}>
-                  Center Graph
-                </button>
-                <button type="button" onClick={() => setPreviewOpen(true)}>
-                  Play Preview
-                </button>
-                <button type="button" disabled={!selection} onClick={handleDeleteSelection}>
-                  Delete Selected
-                </button>
-              </div>
-
-              <SearchPanel
-                query={searchQuery}
-                resultCount={searchResults.length}
-                totalCount={project.nodes.length}
-                results={searchResults}
-                onQueryChange={setSearchQuery}
-                onSelectNode={focusNode}
-              />
-
-              <div className="panel">
-                <h3>History</h3>
-                <button type="button" disabled={!canUndo} onClick={undo}>
-                  Undo
-                </button>
-                <button type="button" disabled={!canRedo} onClick={redo}>
-                  Redo
-                </button>
-              </div>
-
-              <div className="panel">
-                <h3>Export Checks</h3>
-                {exportIssues.length === 0 ? (
-                  <p>Ready to export.</p>
-                ) : (
-                  <ul className="issue-list">
-                    {exportIssues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              {sidebarOrder.map((panelId, index) => (
+                <DraggablePanel
+                  key={panelId}
+                  panelId={panelId}
+                  index={index}
+                  onReorder={moveSidebarPanel}
+                >
+                  {renderSidebarPanel(panelId)}
+                </DraggablePanel>
+              ))}
             </aside>
           )}
         </div>
@@ -386,8 +417,10 @@ export default function App() {
             onFitReady={handleFitReady}
             onViewportCenterReady={handleViewportCenterReady}
             onRequestFocusNode={focusNode}
+            onRequestEditChoice={handleEditChoice}
           />
           <PreviewPlayer open={previewOpen} project={project} onClose={() => setPreviewOpen(false)} />
+          <GlobalsEditor open={globalsEditorOpen} onClose={() => setGlobalsEditorOpen(false)} />
         </main>
 
         <div className={`workspace__side workspace__side--right${rightSidebarCollapsed ? " is-collapsed" : ""}`}>
@@ -400,7 +433,12 @@ export default function App() {
               <span>Inspector</span>
             </button>
           ) : (
-            <Inspector onCollapse={() => setRightSidebarCollapsed(true)} />
+            <Inspector
+              onCollapse={() => setRightSidebarCollapsed(true)}
+              choicesEditorOpen={choicesEditorOpen}
+              onOpenChoicesEditor={() => setChoicesEditorOpen(true)}
+              onCloseChoicesEditor={() => setChoicesEditorOpen(false)}
+            />
           )}
         </div>
       </div>

@@ -1,43 +1,45 @@
-import { useMemo, useState } from "react";
-import ConditionEditor from "./ConditionEditor";
+import { useCallback, useMemo, useState } from "react";
+import DraggablePanel from "./DraggablePanel";
+import ChoicesEditor from "./ChoicesEditor";
+import FileTriggersEditor from "./FileTriggersEditor";
 import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
 import { NODE_COLOR_THEMES, TAG_SUGGESTIONS } from "../lib/nodeAppearance";
-import { createConditionForGlobal } from "../lib/story";
 import { useEditorStore } from "../store/editorStore";
+
+const DEFAULT_INSPECTOR_ORDER = ["node", "tags", "file-triggers", "node-color", "choices", "selected-connection"];
 
 type InspectorProps = {
   onCollapse?: () => void;
+  choicesEditorOpen: boolean;
+  onOpenChoicesEditor: () => void;
+  onCloseChoicesEditor: () => void;
 };
 
-export default function Inspector({ onCollapse }: InspectorProps) {
+export default function Inspector({
+  onCollapse,
+  choicesEditorOpen,
+  onOpenChoicesEditor,
+  onCloseChoicesEditor
+}: InspectorProps) {
   const project = useEditorStore((state) => state.project);
   const selection = useEditorStore((state) => state.selection);
   const updateNode = useEditorStore((state) => state.updateNode);
   const addNodeTag = useEditorStore((state) => state.addNodeTag);
   const removeNodeTag = useEditorStore((state) => state.removeNodeTag);
   const setNodeColor = useEditorStore((state) => state.setNodeColor);
-  const addNodeFileTrigger = useEditorStore((state) => state.addNodeFileTrigger);
-  const removeNodeFileTrigger = useEditorStore((state) => state.removeNodeFileTrigger);
-  const addChoice = useEditorStore((state) => state.addChoice);
-  const removeChoice = useEditorStore((state) => state.removeChoice);
-  const updateChoiceText = useEditorStore((state) => state.updateChoiceText);
-  const connectChoice = useEditorStore((state) => state.connectChoice);
-  const setChoiceVisibilityCondition = useEditorStore((state) => state.setChoiceVisibilityCondition);
-  const setChoiceRouteMode = useEditorStore((state) => state.setChoiceRouteMode);
-  const addConditionalBranch = useEditorStore((state) => state.addConditionalBranch);
-  const removeConditionalBranch = useEditorStore((state) => state.removeConditionalBranch);
-  const moveConditionalBranch = useEditorStore((state) => state.moveConditionalBranch);
-  const updateConditionalBranchCondition = useEditorStore((state) => state.updateConditionalBranchCondition);
-  const updateConditionalBranchTarget = useEditorStore((state) => state.updateConditionalBranchTarget);
-  const updateConditionalFallbackTarget = useEditorStore((state) => state.updateConditionalFallbackTarget);
-  const addChoiceEffect = useEditorStore((state) => state.addChoiceEffect);
-  const removeChoiceEffect = useEditorStore((state) => state.removeChoiceEffect);
-  const updateChoiceEffect = useEditorStore((state) => state.updateChoiceEffect);
-  const updateChoiceEffectGlobal = useEditorStore((state) => state.updateChoiceEffectGlobal);
-  const updateChoiceEffectOperator = useEditorStore((state) => state.updateChoiceEffectOperator);
+
   const setStartNode = useEditorStore((state) => state.setStartNode);
+  const addChoice = useEditorStore((state) => state.addChoice);
   const [tagInput, setTagInput] = useState("");
-  const [fileTriggerInput, setFileTriggerInput] = useState("");
+  const [fileTriggersEditorOpen, setFileTriggersEditorOpen] = useState(false);
+  const [inspectorOrder, setInspectorOrder] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("branch-weaver:inspector-panels");
+      return stored ? JSON.parse(stored) : DEFAULT_INSPECTOR_ORDER;
+    } catch {
+      return DEFAULT_INSPECTOR_ORDER;
+    }
+  });
   const globalsById = useMemo(
     () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
     [project.globals]
@@ -54,11 +56,6 @@ export default function Inspector({ onCollapse }: InspectorProps) {
     selection?.type === "choice"
       ? selectedNode?.choices.find((choice) => choice.id === selection.choiceId) ?? null
       : null;
-
-  const otherNodes = useMemo(
-    () => project.nodes.filter((node) => node.id !== selectedNode?.id),
-    [project.nodes, selectedNode?.id]
-  );
 
   const suggestedTags = useMemo(
     () => TAG_SUGGESTIONS.filter((tag) => !selectedNode?.tags.includes(tag)),
@@ -79,13 +76,169 @@ export default function Inspector({ onCollapse }: InspectorProps) {
     setTagInput("");
   };
 
-  const handleAddFileTrigger = (fileName: string) => {
-    if (!selectedNode) {
-      return;
-    }
+  const moveInspectorPanel = useCallback((fromIndex: number, toIndex: number) => {
+    setInspectorOrder((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, removed);
+      localStorage.setItem("branch-weaver:inspector-panels", JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
-    addNodeFileTrigger(selectedNode.id, fileName);
-    setFileTriggerInput("");
+  const renderInspectorPanel = (panelId: string) => {
+    if (!selectedNode) {
+      return null;
+    }
+    switch (panelId) {
+      case "node":
+        return (
+          <div className="panel">
+            <h3>Node</h3>
+            <label className="field">
+              <span>Title</span>
+              <input
+                value={selectedNode.title}
+                onChange={(event) => updateNode(selectedNode.id, { title: event.target.value })}
+                placeholder="Scene title"
+              />
+            </label>
+            <label className="field">
+              <span>Body</span>
+              <textarea
+                rows={5}
+                value={selectedNode.body}
+                onChange={(event) => updateNode(selectedNode.id, { body: event.target.value })}
+                placeholder="Write scene text here"
+              />
+            </label>
+          </div>
+        );
+      case "tags":
+        return (
+          <div className="panel">
+            <h3>Tags</h3>
+            <div className="tag-editor__list">
+              {selectedNode.tags.length > 0 ? (
+                selectedNode.tags.map((tag) => (
+                  <div key={tag} className="tag-chip">
+                    <span>{tag}</span>
+                    <button type="button" onClick={() => removeNodeTag(selectedNode.id, tag)}>
+                      Remove
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p>This node has no tags yet.</p>
+              )}
+            </div>
+            <label className="field">
+              <span>Add Custom Tag</span>
+              <div className="tag-editor__input-row">
+                <input
+                  value={tagInput}
+                  onChange={(event) => setTagInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleAddTag(tagInput);
+                    }
+                  }}
+                  placeholder="Type a tag name"
+                />
+                <button type="button" onClick={() => handleAddTag(tagInput)}>
+                  Add
+                </button>
+              </div>
+            </label>
+            <div className="tag-editor__suggestions">
+              {suggestedTags.map((tag) => (
+                <button key={tag} type="button" onClick={() => handleAddTag(tag)}>
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      case "file-triggers":
+        return (
+          <div className="panel">
+            <h3>File Triggers</h3>
+            <button
+              type="button"
+              className="file-triggers-panel__trigger"
+              onClick={() => setFileTriggersEditorOpen(true)}
+            >
+              Manage File Triggers
+              <span className="file-triggers-panel__count">{selectedNode.fileTriggers.length}</span>
+            </button>
+          </div>
+        );
+      case "node-color":
+        return (
+          <div className="panel">
+            <h3>Node Color</h3>
+            <div className="color-palette">
+              {Object.entries(NODE_COLOR_THEMES).map(([token, theme]) => (
+                <button
+                  key={token}
+                  type="button"
+                  className={`color-swatch${selectedNode.colorToken === token ? " is-selected" : ""}`}
+                  onClick={() => setNodeColor(selectedNode.id, token as typeof selectedNode.colorToken)}
+                >
+                  <span className="color-swatch__preview" style={{ background: theme.miniMap }} />
+                  <span>{theme.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      case "choices":
+        return (
+          <div className="panel">
+            <h3>Choices</h3>
+            <button
+              type="button"
+              className="choices-panel__trigger"
+              onClick={() => onOpenChoicesEditor()}
+            >
+              Manage Choices
+              <span className="choices-panel__count">{selectedNode.choices.length}</span>
+            </button>
+            <button
+              type="button"
+              className="choices-panel__trigger"
+              onClick={() => addChoice(selectedNode.id)}
+            >
+              Add Choice
+            </button>
+          </div>
+        );
+      case "selected-connection":
+        if (!selectedChoice) {
+          return null;
+        }
+        return (
+          <div className="panel">
+            <h3>Selected Connection</h3>
+            <p>
+              <strong>{selectedChoice.text || "Untitled choice"}</strong>
+            </p>
+            <p>{formatChoiceSummary(selectedChoice, globalsById) ?? "Direct route with no conditions."}</p>
+            {selectedChoice.visibilityCondition ? (
+              <p>Visible when: {formatConditionSummary(selectedChoice.visibilityCondition, globalsById)}</p>
+            ) : null}
+            <p>
+              Route:{" "}
+              {selectedChoice.route.mode === "direct"
+                ? selectedChoice.route.targetNodeId ?? "Unlinked"
+                : `Conditional (${selectedChoice.route.branches.length} rules + else)`}
+            </p>
+          </div>
+        );
+      default:
+        return null;
+    }
   };
 
   if (!selectedNode) {
@@ -116,547 +269,35 @@ export default function Inspector({ onCollapse }: InspectorProps) {
           </button>
         ) : null}
       </div>
-      <div className="panel">
-        <h3>Node</h3>
-        <label className="field">
-          <span>Title</span>
-          <input
-            value={selectedNode.title}
-            onChange={(event) => updateNode(selectedNode.id, { title: event.target.value })}
-            placeholder="Scene title"
-          />
-        </label>
-        <label className="field">
-          <span>Body</span>
-          <textarea
-            rows={8}
-            value={selectedNode.body}
-            onChange={(event) => updateNode(selectedNode.id, { body: event.target.value })}
-            placeholder="Write scene text here"
-          />
-        </label>
-        <div className="inspector__row">
-          <button type="button" onClick={() => addChoice(selectedNode.id)}>
-            Add Choice
-          </button>
-        </div>
-      </div>
+      {inspectorOrder.map((panelId, index) => {
+        const panelContent = renderInspectorPanel(panelId);
+        if (!panelContent) {
+          return null;
+        }
+        return (
+          <DraggablePanel
+            key={panelId}
+            panelId={panelId}
+            index={index}
+            onReorder={moveInspectorPanel}
+          >
+            {panelContent}
+          </DraggablePanel>
+        );
+      })}
 
-      <div className="panel">
-        <h3>Tags</h3>
-        <div className="tag-editor__list">
-          {selectedNode.tags.length > 0 ? (
-            selectedNode.tags.map((tag) => (
-              <div key={tag} className="tag-chip">
-                <span>{tag}</span>
-                <button type="button" onClick={() => removeNodeTag(selectedNode.id, tag)}>
-                  Remove
-                </button>
-              </div>
-            ))
-          ) : (
-            <p>This node has no tags yet.</p>
-          )}
-        </div>
-        <label className="field">
-          <span>Add Custom Tag</span>
-          <div className="tag-editor__input-row">
-            <input
-              value={tagInput}
-              onChange={(event) => setTagInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  handleAddTag(tagInput);
-                }
-              }}
-              placeholder="Type a tag name"
-            />
-            <button type="button" onClick={() => handleAddTag(tagInput)}>
-              Add
-            </button>
-          </div>
-        </label>
-        <div className="tag-editor__suggestions">
-          {suggestedTags.map((tag) => (
-            <button key={tag} type="button" onClick={() => handleAddTag(tag)}>
-              {tag}
-            </button>
-          ))}
-        </div>
-      </div>
+      <FileTriggersEditor
+        nodeId={selectedNode.id}
+        open={fileTriggersEditorOpen}
+        onClose={() => setFileTriggersEditorOpen(false)}
+      />
 
-      <div className="panel">
-        <h3>File Triggers</h3>
-        <div className="file-trigger-editor__list">
-          {selectedNode.fileTriggers.length > 0 ? (
-            selectedNode.fileTriggers.map((fileName) => (
-              <div key={fileName} className="file-trigger-chip">
-                <span>{fileName}</span>
-                <button type="button" onClick={() => removeNodeFileTrigger(selectedNode.id, fileName)}>
-                  Remove
-                </button>
-              </div>
-            ))
-          ) : (
-            <p>This node has no file triggers yet.</p>
-          )}
-        </div>
-        <label className="field">
-          <span>Add File Trigger</span>
-          <div className="file-trigger-editor__input-row">
-            <input
-              value={fileTriggerInput}
-              onChange={(event) => setFileTriggerInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  handleAddFileTrigger(fileTriggerInput);
-                }
-              }}
-              placeholder="e.g. chapter_01.txt"
-            />
-            <button type="button" onClick={() => handleAddFileTrigger(fileTriggerInput)}>
-              Add
-            </button>
-          </div>
-        </label>
-      </div>
-
-      <div className="panel">
-        <h3>Node Color</h3>
-        <div className="color-palette">
-          {Object.entries(NODE_COLOR_THEMES).map(([token, theme]) => (
-            <button
-              key={token}
-              type="button"
-              className={`color-swatch${selectedNode.colorToken === token ? " is-selected" : ""}`}
-              onClick={() => setNodeColor(selectedNode.id, token as typeof selectedNode.colorToken)}
-            >
-              <span className="color-swatch__preview" style={{ background: theme.miniMap }} />
-              <span>{theme.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="panel">
-        <h3>Choices</h3>
-        {selectedNode.choices.length === 0 ? <p>This node has no outgoing choices yet.</p> : null}
-        <div className="choice-list">
-          {selectedNode.choices.map((choice) => {
-            const conditionalRoute = choice.route.mode === "conditional" ? choice.route : null;
-
-            return (
-              <div
-                key={choice.id}
-                className={`choice-editor${selectedChoice?.id === choice.id ? " is-selected" : ""}`}
-              >
-              <label className="field">
-                <span>Choice Text</span>
-                <input
-                  value={choice.text}
-                  onChange={(event) =>
-                    updateChoiceText({ nodeId: selectedNode.id, choiceId: choice.id }, event.target.value)
-                  }
-                  placeholder="Choice text"
-                />
-              </label>
-              <div className="choice-editor__section">
-                <div className="panel__header">
-                  <h3>Visibility</h3>
-                  <button
-                    type="button"
-                    className={choice.visibilityCondition ? "is-active" : ""}
-                    disabled={project.globals.length === 0 && !choice.visibilityCondition}
-                    onClick={() => {
-                      const choiceSelection = { nodeId: selectedNode.id, choiceId: choice.id };
-
-                      if (choice.visibilityCondition) {
-                        setChoiceVisibilityCondition(choiceSelection, null);
-                        return;
-                      }
-
-                      const nextCondition = createConditionForGlobal(project.globals[0]);
-                      if (nextCondition) {
-                        setChoiceVisibilityCondition(choiceSelection, nextCondition);
-                      }
-                    }}
-                  >
-                    {choice.visibilityCondition ? "Disable" : "Enable"}
-                  </button>
-                </div>
-
-                {choice.visibilityCondition ? (
-                  <ConditionEditor
-                    condition={choice.visibilityCondition}
-                    globals={project.globals}
-                    onChange={(condition) =>
-                      setChoiceVisibilityCondition(
-                        { nodeId: selectedNode.id, choiceId: choice.id },
-                        condition
-                      )
-                    }
-                  />
-                ) : (
-                  <p className="choice-editor__hint">
-                    {project.globals.length === 0
-                      ? "Add a global first to enable visibility conditions."
-                      : "This choice is always visible."}
-                  </p>
-                )}
-              </div>
-
-              <div className="choice-editor__section">
-                <div className="panel__header">
-                  <h3>Effects</h3>
-                  <button
-                    type="button"
-                    disabled={project.globals.length === 0}
-                    onClick={() => {
-                      const firstGlobal = project.globals[0];
-                      if (firstGlobal) {
-                        addChoiceEffect({ nodeId: selectedNode.id, choiceId: choice.id }, firstGlobal.id);
-                      }
-                    }}
-                  >
-                    Add Effect
-                  </button>
-                </div>
-
-                {choice.effects.length > 0 ? (
-                  <div className="effect-editor__list">
-                    {choice.effects.map((effect, index) => {
-                      const effectGlobal = globalsById.get(effect.globalId) ?? project.globals[0];
-                      const safeValue =
-                        effectGlobal?.valueType === "boolean"
-                          ? effect.value === true
-                          : typeof effect.value === "number" && Number.isFinite(effect.value)
-                            ? effect.value
-                            : 0;
-
-                      return (
-                        <div key={`${choice.id}-effect-${index}`} className="effect-editor">
-                          <div className="effect-editor__row">
-                            <label className="field">
-                              <span>Global</span>
-                              <select
-                                value={effect.globalId}
-                                onChange={(event) => {
-                                  const nextGlobal = globalsById.get(event.target.value);
-                                  if (!nextGlobal) {
-                                    return;
-                                  }
-                                  updateChoiceEffectGlobal(
-                                    { nodeId: selectedNode.id, choiceId: choice.id },
-                                    index,
-                                    nextGlobal.id
-                                  );
-                                }}
-                              >
-                                {project.globals.map((storyGlobal) => (
-                                  <option key={storyGlobal.id} value={storyGlobal.id}>
-                                    {storyGlobal.name || storyGlobal.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-
-                            {effectGlobal?.valueType === "number" ? (
-                              <label className="field">
-                                <span>Operator</span>
-                                <select
-                                  value={effect.operator === "change" ? "change" : "set"}
-                                  onChange={(event) =>
-                                    updateChoiceEffectOperator(
-                                      { nodeId: selectedNode.id, choiceId: choice.id },
-                                      index,
-                                      event.target.value as "set" | "change"
-                                    )
-                                  }
-                                >
-                                  <option value="set">Set</option>
-                                  <option value="change">Change</option>
-                                </select>
-                              </label>
-                            ) : null}
-
-                            <label className="field">
-                              <span>Value</span>
-                              {effectGlobal?.valueType === "boolean" ? (
-                                <select
-                                  value={safeValue === true ? "true" : "false"}
-                                  onChange={(event) =>
-                                    updateChoiceEffect(
-                                      { nodeId: selectedNode.id, choiceId: choice.id },
-                                      index,
-                                      event.target.value === "true"
-                                    )
-                                  }
-                                >
-                                  <option value="true">true</option>
-                                  <option value="false">false</option>
-                                </select>
-                              ) : (
-                                <input
-                                  type="number"
-                                  value={typeof safeValue === "number" ? safeValue : 0}
-                                  onChange={(event) =>
-                                    updateChoiceEffect(
-                                      { nodeId: selectedNode.id, choiceId: choice.id },
-                                      index,
-                                      Number(event.target.value)
-                                    )
-                                  }
-                                />
-                              )}
-                            </label>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeChoiceEffect({ nodeId: selectedNode.id, choiceId: choice.id }, index)
-                              }
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="choice-editor__hint">
-                    {project.globals.length === 0
-                      ? "Add a global first to create effects."
-                      : "This choice has no effects yet."}
-                  </p>
-                )}
-              </div>
-
-              <div className="choice-editor__section">
-                <label className="field">
-                  <span>Routing Mode</span>
-                  <select
-                    value={choice.route.mode}
-                    onChange={(event) => {
-                      const nextMode = event.target.value as "direct" | "conditional";
-
-                      if (
-                        nextMode === "direct" &&
-                        choice.route.mode === "conditional" &&
-                        choice.route.branches.length > 0 &&
-                        !window.confirm(
-                          "Switching back to direct routing will remove all conditional branches and keep the else target. Continue?"
-                        )
-                      ) {
-                        return;
-                      }
-
-                      setChoiceRouteMode({ nodeId: selectedNode.id, choiceId: choice.id }, nextMode);
-                    }}
-                  >
-                    <option value="direct">Direct</option>
-                    <option value="conditional">Conditional</option>
-                  </select>
-                </label>
-
-                {choice.route.mode === "direct" ? (
-                  <label className="field">
-                    <span>Target Node</span>
-                    <select
-                      value={choice.route.targetNodeId ?? ""}
-                      onChange={(event) =>
-                        connectChoice(
-                          { nodeId: selectedNode.id, choiceId: choice.id },
-                          event.target.value || null
-                        )
-                      }
-                    >
-                      <option value="">Unlinked</option>
-                      {otherNodes.map((node) => (
-                        <option key={node.id} value={node.id}>
-                          {node.title || node.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : conditionalRoute ? (
-                  <div className="conditional-route-editor">
-                    <div className="choice-editor__actions">
-                      <button
-                        type="button"
-                        disabled={project.globals.length === 0}
-                        onClick={() => addConditionalBranch({ nodeId: selectedNode.id, choiceId: choice.id })}
-                      >
-                        Add Rule
-                      </button>
-                    </div>
-
-                    {conditionalRoute.branches.length > 0 ? (
-                      <div className="conditional-route-editor__list">
-                        {conditionalRoute.branches.map((branch, index) => (
-                          <div key={`${choice.id}-${index}`} className="conditional-branch">
-                            <div className="panel__header">
-                              <h3>{index === 0 ? "If" : "Else If"}</h3>
-                              <div className="choice-editor__actions">
-                                <button
-                                  type="button"
-                                  disabled={index === 0}
-                                  onClick={() =>
-                                    moveConditionalBranch(
-                                      { nodeId: selectedNode.id, choiceId: choice.id },
-                                      index,
-                                      -1
-                                    )
-                                  }
-                                >
-                                  Up
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={index === conditionalRoute.branches.length - 1}
-                                  onClick={() =>
-                                    moveConditionalBranch(
-                                      { nodeId: selectedNode.id, choiceId: choice.id },
-                                      index,
-                                      1
-                                    )
-                                  }
-                                >
-                                  Down
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    removeConditionalBranch(
-                                      { nodeId: selectedNode.id, choiceId: choice.id },
-                                      index
-                                    )
-                                  }
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-
-                            <ConditionEditor
-                              condition={branch.condition}
-                              globals={project.globals}
-                              onChange={(condition) =>
-                                updateConditionalBranchCondition(
-                                  { nodeId: selectedNode.id, choiceId: choice.id },
-                                  index,
-                                  condition
-                                )
-                              }
-                            />
-
-                            <label className="field">
-                              <span>Target Node</span>
-                              <select
-                                value={branch.targetNodeId ?? ""}
-                                onChange={(event) =>
-                                  updateConditionalBranchTarget(
-                                    { nodeId: selectedNode.id, choiceId: choice.id },
-                                    index,
-                                    event.target.value || null
-                                  )
-                                }
-                              >
-                                <option value="">Unlinked</option>
-                                {otherNodes.map((node) => (
-                                  <option key={node.id} value={node.id}>
-                                    {node.title || node.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="choice-editor__hint">
-                        {project.globals.length === 0
-                          ? "Add a global first to create conditional rules."
-                          : "No conditional rules yet. Add one or use the else target below."}
-                      </p>
-                    )}
-
-                    <div className="conditional-branch conditional-branch--fallback">
-                      <div className="panel__header">
-                        <h3>Else</h3>
-                      </div>
-                      <label className="field">
-                        <span>Fallback Target</span>
-                        <select
-                          value={conditionalRoute.fallbackTargetNodeId ?? ""}
-                          onChange={(event) =>
-                            updateConditionalFallbackTarget(
-                              { nodeId: selectedNode.id, choiceId: choice.id },
-                              event.target.value || null
-                            )
-                          }
-                        >
-                          <option value="">Unlinked</option>
-                          {otherNodes.map((node) => (
-                            <option key={node.id} value={node.id}>
-                              {node.title || node.id}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <div className="choice-editor__actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hasConfiguredTarget =
-                      choice.route.mode === "direct"
-                        ? Boolean(choice.route.targetNodeId)
-                        : choice.route.branches.some((branch) => branch.targetNodeId) ||
-                          Boolean(choice.route.fallbackTargetNodeId);
-
-                    if (
-                      hasConfiguredTarget &&
-                      !window.confirm("This will remove the existing jump target for the choice. Continue?")
-                    ) {
-                      return;
-                    }
-                    removeChoice({ nodeId: selectedNode.id, choiceId: choice.id });
-                  }}
-                >
-                  Delete Choice
-                </button>
-              </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {selectedChoice ? (
-        <div className="panel">
-          <h3>Selected Connection</h3>
-          <p>
-            <strong>{selectedChoice.text || "Untitled choice"}</strong>
-          </p>
-          <p>{formatChoiceSummary(selectedChoice, globalsById) ?? "Direct route with no conditions."}</p>
-          {selectedChoice.visibilityCondition ? (
-            <p>Visible when: {formatConditionSummary(selectedChoice.visibilityCondition, globalsById)}</p>
-          ) : null}
-          <p>
-            Route:
-            {" "}
-            {selectedChoice.route.mode === "direct"
-              ? selectedChoice.route.targetNodeId ?? "Unlinked"
-              : `Conditional (${selectedChoice.route.branches.length} rules + else)`}
-          </p>
-        </div>
-      ) : null}
+      <ChoicesEditor
+        nodeId={selectedNode.id}
+        selectedChoiceId={selectedChoice?.id ?? null}
+        open={choicesEditorOpen}
+        onClose={onCloseChoicesEditor}
+      />
     </aside>
   );
 }

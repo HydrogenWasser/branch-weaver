@@ -1,6 +1,6 @@
-# Arrow Story Editor
+# Branch Weaver
 
-Arrow is a lightweight web editor for pure-text branching adventure games. It focuses on three things:
+Branch Weaver is a lightweight web editor for pure-text branching adventure games. It focuses on three things:
 
 - visual node and branch editing
 - fast scene text and choice editing
