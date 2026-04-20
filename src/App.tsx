@@ -1,9 +1,11 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import CanvasGraph from "./components/CanvasGraph";
+import ChoicesDrawer from "./components/ChoicesDrawer";
+import DraggablePanel from "./components/DraggablePanel";
+import ExportChecksPanel from "./components/ExportChecksPanel";
 import GlobalsEditor from "./components/GlobalsEditor";
 import GlobalsPanel from "./components/GlobalsPanel";
 import Inspector from "./components/Inspector";
-import DraggablePanel from "./components/DraggablePanel";
 import PreviewPlayer from "./components/PreviewPlayer";
 import SearchPanel from "./components/SearchPanel";
 import TopBar from "./components/TopBar";
@@ -12,7 +14,6 @@ import { usePanelOrder } from "./hooks/usePanelOrder";
 import { useProjectFileActions } from "./hooks/useProjectFileActions";
 import { buildAutoLayout } from "./lib/layout";
 import { buildNodeSearchIndex, searchNodeIndex } from "./lib/search";
-import ExportChecksPanel from "./components/ExportChecksPanel";
 import { useEditorStore } from "./store/editorStore";
 import type { XYPosition } from "./types/story";
 
@@ -30,7 +31,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [globalsEditorOpen, setGlobalsEditorOpen] = useState(false);
-  const [choicesEditorOpen, setChoicesEditorOpen] = useState(false);
+  const [choicesDrawerOpen, setChoicesDrawerOpen] = useState(false);
+  const [choicesDrawerNodeId, setChoicesDrawerNodeId] = useState<string | null>(null);
+  const [choicesDrawerChoiceId, setChoicesDrawerChoiceId] = useState<string | null>(null);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
 
@@ -46,7 +49,6 @@ export default function App() {
   const selection = useEditorStore((state) => state.selection);
   const updateProjectTitle = useEditorStore((state) => state.updateProjectTitle);
   const clearError = useEditorStore((state) => state.clearError);
-  const setError = useEditorStore((state) => state.setError);
   const setSelection = useEditorStore((state) => state.setSelection);
   const addNode = useEditorStore((state) => state.addNode);
   const applyNodeLayout = useEditorStore((state) => state.applyNodeLayout);
@@ -88,12 +90,43 @@ export default function App() {
     [setSelection]
   );
 
-  const handleEditChoice = useCallback(
+  const handleSelectDrawerChoice = useCallback(
     (nodeId: string, choiceId: string) => {
+      setChoicesDrawerOpen(true);
+      setChoicesDrawerNodeId(nodeId);
+      setChoicesDrawerChoiceId(choiceId);
       setSelection({ type: "choice", nodeId, choiceId });
-      setChoicesEditorOpen(true);
     },
     [setSelection]
+  );
+
+  const handleOpenChoicesDrawer = useCallback(
+    (nodeId: string, choiceId?: string | null) => {
+      setChoicesDrawerOpen(true);
+      setChoicesDrawerNodeId(nodeId);
+      setChoicesDrawerChoiceId(choiceId ?? null);
+      if (choiceId) {
+        setSelection({ type: "choice", nodeId, choiceId });
+      } else {
+        setSelection({ type: "node", nodeId });
+      }
+    },
+    [setSelection]
+  );
+
+  const handleCloseChoicesDrawer = useCallback(() => {
+    setChoicesDrawerOpen(false);
+    setChoicesDrawerChoiceId(null);
+    if (choicesDrawerNodeId) {
+      setSelection({ type: "node", nodeId: choicesDrawerNodeId });
+    }
+  }, [choicesDrawerNodeId, setSelection]);
+
+  const handleEditChoice = useCallback(
+    (nodeId: string, choiceId: string) => {
+      handleOpenChoicesDrawer(nodeId, choiceId);
+    },
+    [handleOpenChoicesDrawer]
   );
 
   const handleAddNode = useCallback(() => {
@@ -152,6 +185,16 @@ export default function App() {
     onRedo: redo,
     onDelete: handleDeleteSelection
   });
+
+  useEffect(() => {
+    if (selection?.type !== "choice") {
+      return;
+    }
+
+    setChoicesDrawerOpen(true);
+    setChoicesDrawerNodeId(selection.nodeId);
+    setChoicesDrawerChoiceId(selection.choiceId);
+  }, [selection]);
 
   const renderSidebarPanel = (panelId: string) => {
     switch (panelId) {
@@ -287,6 +330,13 @@ export default function App() {
             onRequestFocusNode={focusNode}
             onRequestEditChoice={handleEditChoice}
           />
+          <ChoicesDrawer
+            open={choicesDrawerOpen}
+            nodeId={choicesDrawerNodeId}
+            choiceId={choicesDrawerChoiceId}
+            onClose={handleCloseChoicesDrawer}
+            onSelectChoice={handleSelectDrawerChoice}
+          />
           <PreviewPlayer open={previewOpen} project={project} onClose={() => setPreviewOpen(false)} />
           <GlobalsEditor open={globalsEditorOpen} onClose={() => setGlobalsEditorOpen(false)} />
         </main>
@@ -303,9 +353,7 @@ export default function App() {
           ) : (
             <Inspector
               onCollapse={() => setRightSidebarCollapsed(true)}
-              choicesEditorOpen={choicesEditorOpen}
-              onOpenChoicesEditor={() => setChoicesEditorOpen(true)}
-              onCloseChoicesEditor={() => setChoicesEditorOpen(false)}
+              onOpenChoicesEditor={handleOpenChoicesDrawer}
             />
           )}
         </div>

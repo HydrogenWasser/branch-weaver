@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DraggablePanel from "./DraggablePanel";
-import ChoicesEditor from "./ChoicesEditor";
 import FileTriggersEditor from "./FileTriggersEditor";
 import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
 import { NODE_COLOR_THEMES, TAG_SUGGESTIONS } from "../lib/nodeAppearance";
@@ -10,24 +9,16 @@ const DEFAULT_INSPECTOR_ORDER = ["node", "tags", "file-triggers", "node-color", 
 
 type InspectorProps = {
   onCollapse?: () => void;
-  choicesEditorOpen: boolean;
-  onOpenChoicesEditor: () => void;
-  onCloseChoicesEditor: () => void;
+  onOpenChoicesEditor: (nodeId: string, choiceId?: string | null) => void;
 };
 
-export default function Inspector({
-  onCollapse,
-  choicesEditorOpen,
-  onOpenChoicesEditor,
-  onCloseChoicesEditor
-}: InspectorProps) {
+export default function Inspector({ onCollapse, onOpenChoicesEditor }: InspectorProps) {
   const project = useEditorStore((state) => state.project);
   const selection = useEditorStore((state) => state.selection);
   const updateNode = useEditorStore((state) => state.updateNode);
   const addNodeTag = useEditorStore((state) => state.addNodeTag);
   const removeNodeTag = useEditorStore((state) => state.removeNodeTag);
   const setNodeColor = useEditorStore((state) => state.setNodeColor);
-
   const setStartNode = useEditorStore((state) => state.setStartNode);
   const addChoice = useEditorStore((state) => state.addChoice);
   const [tagInput, setTagInput] = useState("");
@@ -99,6 +90,7 @@ export default function Inspector({
     if (!selectedNode) {
       return null;
     }
+
     switch (panelId) {
       case "node":
         return (
@@ -219,7 +211,12 @@ export default function Inspector({
             <button
               type="button"
               className="choices-panel__trigger"
-              onClick={() => onOpenChoicesEditor()}
+              onClick={() =>
+                onOpenChoicesEditor(
+                  selectedNode.id,
+                  selectedChoice?.id ?? selectedNode.choices[0]?.id ?? null
+                )
+              }
             >
               Manage Choices
               <span className="choices-panel__count">{selectedNode.choices.length}</span>
@@ -309,13 +306,6 @@ export default function Inspector({
         nodeId={selectedNode.id}
         open={fileTriggersEditorOpen}
         onClose={() => setFileTriggersEditorOpen(false)}
-      />
-
-      <ChoicesEditor
-        nodeId={selectedNode.id}
-        selectedChoiceId={selectedChoice?.id ?? null}
-        open={choicesEditorOpen}
-        onClose={onCloseChoicesEditor}
       />
     </aside>
   );
