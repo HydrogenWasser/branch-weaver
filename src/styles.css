@@ -352,6 +352,82 @@ textarea {
   background: rgba(255, 245, 228, 0.9);
 }
 
+.condition-editor--atomic {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.condition-editor--atomic .field {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.condition-editor--composite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.condition-editor__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.condition-editor__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(173, 124, 59, 0.14);
+  color: #6b4a2a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.condition-editor__label {
+  font-size: 0.9rem;
+  color: #4a3522;
+  font-weight: 600;
+  flex: 1 1 0;
+}
+
+.condition-editor__children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border-left: 2px solid rgba(148, 114, 79, 0.15);
+}
+
+.condition-editor__child {
+  margin-top: 0.2rem;
+}
+
+.condition-editor__toolbar {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.condition-editor__toolbar button {
+  padding: 0.34rem 0.58rem;
+  font-size: 0.85rem;
+}
+
+.condition-editor__remove {
+  padding: 0.34rem 0.58rem;
+  font-size: 0.85rem;
+  color: #8b3a2a;
+  border-color: rgba(139, 58, 42, 0.35);
+}
+
 .choice-editor__hint,
 .condition-editor__empty {
   margin: 0;

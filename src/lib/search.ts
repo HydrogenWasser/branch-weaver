@@ -1,4 +1,4 @@
-import type { StoryProject } from "../types/story";
+import type { StoryNode } from "../types/story";
 
 export type NodeSearchIndexEntry = {
   nodeId: string;
@@ -60,8 +60,8 @@ function createExcerpt(entry: NodeSearchIndexEntry, terms: string[]): Pick<NodeS
   };
 }
 
-export function buildNodeSearchIndex(project: StoryProject): NodeSearchIndexEntry[] {
-  return project.nodes.map((node) => ({
+export function buildNodeSearchIndex(nodes: StoryNode[]): NodeSearchIndexEntry[] {
+  return nodes.map((node) => ({
     nodeId: node.id,
     title: node.title || "Untitled Node",
     body: node.body,

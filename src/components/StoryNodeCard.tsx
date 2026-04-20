@@ -24,11 +24,10 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
   useEffect(() => {
     updateNodeInternals(id);
   }, [
-    data.storyNode.body,
-    JSON.stringify(data.storyNode.choices),
-    data.storyNode.colorToken,
-    data.storyNode.tags.join("|"),
     data.storyNode.title,
+    data.storyNode.body,
+    data.storyNode.tags.length,
+    data.storyNode.choices.map((c) => c.text).join("|"),
     id,
     updateNodeInternals
   ]);

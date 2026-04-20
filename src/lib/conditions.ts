@@ -1,8 +1,10 @@
 import type {
   ConditionOperator,
   GlobalValueType,
+  StoryAtomicCondition,
   StoryChoice,
   StoryChoiceRoute,
+  StoryCompositeCondition,
   StoryCondition,
   StoryEffect,
   StoryGlobal
@@ -34,12 +36,17 @@ export function coerceConditionValue(
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function createDefaultCondition(storyGlobal: StoryGlobal): StoryCondition {
+export function createDefaultCondition(storyGlobal: StoryGlobal): StoryAtomicCondition {
   return {
+    type: "atomic",
     globalId: storyGlobal.id,
     operator: "eq",
     value: storyGlobal.valueType === "boolean" ? false : 0
   };
+}
+
+export function createCompositeCondition(type: "all" | "any"): StoryCompositeCondition {
+  return { type, conditions: [] };
 }
 
 function compareValues(operator: ConditionOperator, left: boolean | number, right: boolean | number): boolean {
@@ -66,13 +73,25 @@ export function evaluateCondition(
   globalsById: Map<string, StoryGlobal>,
   values: Map<string, boolean | number>
 ): boolean {
-  const storyGlobal = globalsById.get(condition.globalId);
-  if (!storyGlobal) {
-    return false;
+  if (condition.type === "atomic") {
+    const storyGlobal = globalsById.get(condition.globalId);
+    if (!storyGlobal) {
+      return false;
+    }
+
+    const currentValue = values.get(condition.globalId) ?? storyGlobal.defaultValue;
+    return compareValues(condition.operator, currentValue, condition.value);
   }
 
-  const currentValue = values.get(condition.globalId) ?? storyGlobal.defaultValue;
-  return compareValues(condition.operator, currentValue, condition.value);
+  if (condition.type === "all") {
+    return condition.conditions.every((child) =>
+      evaluateCondition(child, globalsById, values)
+    );
+  }
+
+  return condition.conditions.some((child) =>
+    evaluateCondition(child, globalsById, values)
+  );
 }
 
 export function isChoiceVisible(
@@ -115,8 +134,18 @@ export function getChoiceRouteTargets(route: StoryChoiceRoute): string[] {
 export function getChoiceReferencedGlobalIds(choice: StoryChoice): string[] {
   const ids = new Set<string>();
 
+  function collectFromCondition(condition: StoryCondition): void {
+    if (condition.type === "atomic") {
+      ids.add(condition.globalId);
+    } else {
+      for (const child of condition.conditions) {
+        collectFromCondition(child);
+      }
+    }
+  }
+
   if (choice.visibilityCondition) {
-    ids.add(choice.visibilityCondition.globalId);
+    collectFromCondition(choice.visibilityCondition);
   }
 
   for (const effect of choice.effects) {
@@ -125,7 +154,7 @@ export function getChoiceReferencedGlobalIds(choice: StoryChoice): string[] {
 
   if (choice.route.mode === "conditional") {
     for (const branch of choice.route.branches) {
-      ids.add(branch.condition.globalId);
+      collectFromCondition(branch.condition);
     }
   }
 
@@ -199,15 +228,25 @@ export function formatConditionSummary(
   condition: StoryCondition,
   globalsById: Map<string, StoryGlobal>
 ): string {
-  const storyGlobal = globalsById.get(condition.globalId);
-  const label = storyGlobal?.name || "Unknown";
+  if (condition.type === "atomic") {
+    const storyGlobal = globalsById.get(condition.globalId);
+    const label = storyGlobal?.name || "Unknown";
 
-  if (storyGlobal?.valueType === "boolean") {
-    const expectation = condition.value === true ? "true" : "false";
-    return condition.operator === "neq" ? `${label} is not ${expectation}` : `${label} is ${expectation}`;
+    if (storyGlobal?.valueType === "boolean") {
+      const expectation = condition.value === true ? "true" : "false";
+      return condition.operator === "neq" ? `${label} is not ${expectation}` : `${label} is ${expectation}`;
+    }
+
+    return `${label} ${formatOperatorLabel(condition.operator)} ${condition.value}`;
   }
 
-  return `${label} ${formatOperatorLabel(condition.operator)} ${condition.value}`;
+  const operatorLabel = condition.type === "all" ? "AND" : "OR";
+  if (condition.conditions.length === 0) {
+    return condition.type === "all" ? "(always true)" : "(always false)";
+  }
+
+  const parts = condition.conditions.map((child) => formatConditionSummary(child, globalsById));
+  return `(${parts.join(` ${operatorLabel} `)})`;
 }
 
 export function formatEffectsSummary(choice: StoryChoice, globalsById: Map<string, StoryGlobal>): string | null {

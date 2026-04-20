@@ -27,11 +27,19 @@ export type StoryGlobal =
       defaultValue: number;
     };
 
-export type StoryCondition = {
+export type StoryAtomicCondition = {
+  type: "atomic";
   globalId: string;
   operator: ConditionOperator;
   value: boolean | number;
 };
+
+export type StoryCompositeCondition = {
+  type: "all" | "any";
+  conditions: StoryCondition[];
+};
+
+export type StoryCondition = StoryAtomicCondition | StoryCompositeCondition;
 
 export type StoryEffect = {
   globalId: string;
@@ -110,11 +118,24 @@ const globalValueTypeSchema = z.enum(globalValueTypes);
 const conditionOperatorSchema = z.enum(conditionOperators);
 const conditionValueSchema = z.union([z.boolean(), z.number()]);
 
-const storyConditionSchema = z.object({
-  globalId: z.string().min(1),
-  operator: conditionOperatorSchema,
-  value: conditionValueSchema
-});
+const storyConditionSchema = z.lazy(() =>
+  z.union([
+    z.object({
+      type: z.literal("atomic").default("atomic"),
+      globalId: z.string().min(1),
+      operator: conditionOperatorSchema,
+      value: conditionValueSchema
+    }),
+    z.object({
+      type: z.literal("all"),
+      conditions: z.array(storyConditionSchema)
+    }),
+    z.object({
+      type: z.literal("any"),
+      conditions: z.array(storyConditionSchema)
+    })
+  ])
+) as z.ZodType<StoryCondition>;
 
 const storyEffectSchema = z.object({
   globalId: z.string().min(1),
@@ -122,12 +143,26 @@ const storyEffectSchema = z.object({
   value: conditionValueSchema
 });
 
-const globalSchema = z.object({
+const booleanGlobalSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  valueType: globalValueTypeSchema,
-  defaultValue: conditionValueSchema
+  valueType: z.literal("boolean"),
+  defaultValue: z.boolean()
 });
+
+const numberGlobalSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  valueType: z.literal("number"),
+  defaultValue: z.number().refine((v) => Number.isFinite(v), {
+    message: "Number global default value must be finite"
+  })
+});
+
+const globalSchema = z.discriminatedUnion("valueType", [
+  booleanGlobalSchema,
+  numberGlobalSchema
+]);
 
 const legacyChoiceSchema = z.object({
   id: z.string().min(1),

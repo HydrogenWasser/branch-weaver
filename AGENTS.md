@@ -38,8 +38,28 @@ src/
     SearchPanel.tsx  左侧边栏，用于跨节点搜索
     PreviewPlayer.tsx 应用内试玩预览弹窗
     ConditionEditor.tsx 可复用的条件构建器 UI
-  store/
-    editorStore.ts   Zustand store：项目状态、选择、历史记录（撤销/重做）、脏标记
+    ChoicesEditor.tsx 选项编辑器弹窗
+    ChoiceVisibilityEditor.tsx 可见性条件编辑子组件
+    ChoiceEffectsEditor.tsx  Effects 编辑子组件
+    ChoiceRouteEditor.tsx  路由编辑子组件
+    ExportChecksPanel.tsx  导出检查面板
+    DraggablePanel.tsx     可拖拽排序的面板容器
+    FileTriggersEditor.tsx 文件触发器编辑器
+    GlobalsEditor.tsx      全局变量编辑器弹窗
+  hooks/             通用 React hooks
+    useEditorShortcuts.ts  全局快捷键监听
+    usePanelOrder.ts       面板排序与 localStorage 持久化
+    useProjectFileActions.ts 文件操作 handler 聚合
+  store/             Zustand store
+    types.ts         EditorStore 类型定义
+    storeUtils.ts    共享辅助函数（withProjectMutation、resetState 等）
+    editorStore.ts   Store 创建与合并入口
+    slices/          按功能拆分的 slice
+      coreSlice.ts   项目加载、标题、选择、视口
+      globalSlice.ts 全局变量增删改查
+      nodeSlice.ts   节点增删改查、标签、颜色、fileTriggers
+      choiceSlice.ts 选项增删改查、条件、effects、路由
+      historySlice.ts 撤销/重做、删除选中项、导出检查
   types/
     story.ts         领域类型与 StoryProject v1/v2 的 Zod schema
   lib/
@@ -64,9 +84,10 @@ public/
 - **元数据：** `title`、`startNodeId`
 - **全局变量：** 带默认值的强类型变量（`boolean` 或 `number`），在条件中被引用
 - **节点：** 故事场景，包含 `title`、`body`、`position`、`tags`、`colorToken` 与 `choices`
-- **选项：** 文本 + 可选的 `visibilityCondition` + `route`
+- **选项：** 文本 + 可选的 `visibilityCondition` + `effects` + `route`
+  - `visibilityCondition` 可以是单个原子条件或嵌套的 `all`/`any` 组合条件
   - `route.mode === "direct"` → 单个 `targetNodeId`
-  - `route.mode === "conditional"` → 有序的 `branches`（每个 branch 包含 `condition` 与 `targetNodeId`）以及 `fallbackTargetNodeId`
+  - `route.mode === "conditional"` → 有序的 `branches`（每个 branch 包含 `condition` 与 `targetNodeId`）以及 `fallbackTargetNodeId`，branch 的 `condition` 同样支持组合条件
 
 JSON v1（旧版）仍会被解析，并在导入时自动迁移到 v2。
 
@@ -101,28 +122,37 @@ npm run preview
 
 ## 状态管理规范
 
-`src/store/editorStore.ts` 中的 Zustand store 是唯一数据源。
+Zustand store 是唯一数据源，定义在 `src/store/` 下。
 
+- **组织方式：** `editorStore.ts` 作为合并入口，实际逻辑按功能拆分为 `src/store/slices/` 下的 core / global / node / choice / history slice。各 slice 通过共享的 `EditorSet` / `EditorGet` 类型接入 store。
 - **不可变性辅助：** `duplicateProject(project)` 通过 `JSON.parse(JSON.stringify(...))` 进行深拷贝。
 - **历史/撤销重做：** 每次变更操作都会将当前项目快照推入 `historyPast`，并清空 `historyFuture`。撤销/重做通过恢复快照实现，并将选中项重置为起始节点。
 - **脏跟踪：** 将项目序列化为字符串，与 `lastSavedSnapshot` 比较。
 - **选中项：** 可以是 `null`、 `{ type: "node", nodeId }` 或 `{ type: "choice", nodeId, choiceId }`。
 - **错误处理：** `lastError` 是一个字符串，在错误横幅中显示；大多数变更操作在成功时会清除它。
 
-添加新的变更操作时，请用 `withProjectMutation(state, mutate)` 包裹，以确保历史记录与脏状态保持一致。
+添加新的变更操作时，请在对应 slice 中用 `withProjectMutation(state, mutate)` 包裹，以确保历史记录与脏状态保持一致。`withProjectMutation` 和 `resetState` 定义在 `src/store/storeUtils.ts`。
 
 ## 条件逻辑与全局变量
 
-全局变量通过 ID 在 `StoryCondition` 对象中被引用：
+全局变量通过 ID 在 `StoryCondition` 对象中被引用。条件系统支持嵌套组合：
 
 ```ts
-{ globalId: string; operator: "eq" | "neq" | "gt" | "gte" | "lt" | "lte"; value: boolean | number }
+type StoryCondition =
+  | { type: "atomic"; globalId: string; operator: "eq" | "neq" | "gt" | "gte" | "lt" | "lte"; value: boolean | number }
+  | { type: "all"; conditions: StoryCondition[] }
+  | { type: "any"; conditions: StoryCondition[] };
 ```
 
+- `atomic`：单个原子条件，比较一个全局变量与目标值。
+- `all`：所有子条件都为 true（逻辑 AND）。
+- `any`：任一子条件为 true（逻辑 OR）。
+- 组合条件可以无限嵌套，例如 `(A > 5 AND B = true) OR C < 10`。
 - 布尔类型全局变量只允许 `eq` 和 `neq`。
 - 数字类型全局变量允许全部六种运算符。
 - 当有任何选项仍引用该全局变量时，store 会阻止更改其类型或删除它。
-- 当全局变量发生变化时，条件会被规范化为安全值。
+- 当全局变量发生变化时，所有条件（包括嵌套在组合条件内的原子条件）会被递归规范化为安全值。
+- 向后兼容：旧版 JSON 中的条件对象缺少 `type` 字段，Zod schema 会在解析时自动补全 `type: "atomic"`。
 
 ## 文件读写行为
 
@@ -130,7 +160,9 @@ npm run preview
 - **保存 / 另存为：** 通过 `<a download="...">` 和 `Blob` 触发下载。由于浏览器无法覆盖现有路径，`saveJsonFile` 返回当前路径不变，`saveJsonFileAs` 返回 `null`。
 - **保存时验证：** 序列化前会运行 `exportValidationErrors(project)`。如果存在问题，保存将被阻止，并通过错误横幅说明需要修复的内容。
 
-## 键盘快捷键（在 `App.tsx` 中处理）
+## 键盘快捷键
+
+快捷键逻辑封装在 `src/hooks/useEditorShortcuts.ts` 中，由 `App.tsx` 挂载。文件操作 handler 聚合在 `src/hooks/useProjectFileActions.ts` 中。
 
 | 快捷键 | 动作 |
 |--------|------|
@@ -160,5 +192,9 @@ npm run preview
 - 当节点数据的变化可能影响尺寸（body、choices、tags）时，记得在 `StoryNodeCard` 中调用 `updateNodeInternals`。
 
 - `StoryNodeCard` 中的条件路由 handle **不可连接**（`isConnectable={false}`）；只有直接路由允许从选项 handle 拖拽出一条边。
+
+- `StoryNodeCard` 调用 `updateNodeInternals` 的 effect 依赖使用轻量签名（如 `choices.map(c => c.text).join("|")`），不要恢复为 `JSON.stringify`。
+
+- Inspector 中的 title / body 输入使用本地 state + `onBlur` 提交，避免逐字符触发历史快照。
 
   

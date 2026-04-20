@@ -64,7 +64,7 @@ export default function DraggablePanel({ panelId, index, onReorder, children }: 
       data-panel-id={panelId}
     >
       <div className="draggable-panel__handle" title="Drag to reorder">
-        <span className="draggable-panel__handle-grip">⋮⋮</span>
+        <span className="draggable-panel__handle-grip">::::::</span>
       </div>
       {children}
     </div>

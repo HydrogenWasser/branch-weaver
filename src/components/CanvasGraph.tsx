@@ -54,14 +54,15 @@ export default function CanvasGraph({
 }: CanvasGraphProps) {
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
-  const project = useEditorStore((state) => state.project);
+  const nodes = useEditorStore((state) => state.project.nodes);
+  const globals = useEditorStore((state) => state.project.globals);
   const selection = useEditorStore((state) => state.selection);
   const setSelection = useEditorStore((state) => state.setSelection);
   const moveNode = useEditorStore((state) => state.moveNode);
   const connectChoice = useEditorStore((state) => state.connectChoice);
   const globalsById = useMemo(
-    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
-    [project.globals]
+    () => new Map(globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
+    [globals]
   );
   const handleNodeBodyClick = useCallback((nodeId: string) => {
     setSelection({ type: "node", nodeId });
@@ -81,7 +82,7 @@ export default function CanvasGraph({
 
   const projectNodes = useMemo<Node[]>(
     () =>
-      project.nodes.map((storyNode) => ({
+      nodes.map((storyNode) => ({
         id: storyNode.id,
         type: "storyNode",
         position: storyNode.position,
@@ -105,7 +106,7 @@ export default function CanvasGraph({
       handleNodeBodyDoubleClick,
       globalsById,
       highlightedNodeIds,
-      project,
+      nodes,
       selection
     ]
   );
@@ -117,7 +118,7 @@ export default function CanvasGraph({
 
   const edges = useMemo<Edge[]>(
     () =>
-      project.nodes.flatMap((storyNode) =>
+      nodes.flatMap((storyNode) =>
         storyNode.choices.flatMap((choice) => {
           const selectedChoice =
             selection?.type === "choice" &&
@@ -175,7 +176,7 @@ export default function CanvasGraph({
           return [...branchEdges, ...fallbackEdge];
         })
       ),
-    [globalsById, project, selection]
+    [globalsById, nodes, selection]
   );
 
   const fitGraph = useCallback(() => {
@@ -265,8 +266,15 @@ export default function CanvasGraph({
   }, [setSelection]);
 
   const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
+    const currentNode = nodes.find((n) => n.id === node.id);
+    if (
+      !currentNode ||
+      (currentNode.position.x === node.position.x && currentNode.position.y === node.position.y)
+    ) {
+      return;
+    }
     moveNode(node.id, node.position);
-  }, [moveNode]);
+  }, [moveNode, nodes]);
 
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));

@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { applyEffects, isChoiceVisible, resolveChoiceTargetNodeId } from "../lib/conditions";
 import type { StoryChoice, StoryNode, StoryProject } from "../types/story";
 
+type PreviewFrame = {
+  nodeId: string;
+  globals: Map<string, boolean | number>;
+};
+
 type PreviewPlayerProps = {
   open: boolean;
   project: StoryProject;
@@ -12,25 +17,30 @@ function usePreviewNodeMap(project: StoryProject): Map<string, StoryNode> {
   return useMemo(() => new Map(project.nodes.map((node) => [node.id, node])), [project.nodes]);
 }
 
+function createInitialHistory(project: StoryProject): PreviewFrame[] {
+  return [
+    {
+      nodeId: project.metadata.startNodeId,
+      globals: new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue]))
+    }
+  ];
+}
+
 export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerProps) {
   const nodeMap = usePreviewNodeMap(project);
   const globalsById = useMemo(
     () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
     [project.globals]
   );
-  const [runtimeGlobals, setRuntimeGlobals] = useState<Map<string, boolean | number>>(
-    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue]))
-  );
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<PreviewFrame[]>(() => createInitialHistory(project));
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    setHistory([project.metadata.startNodeId]);
-    setRuntimeGlobals(new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue])));
-  }, [open, project.metadata.startNodeId, project.globals]);
+    setHistory(createInitialHistory(project));
+  }, [open, project]);
 
   useEffect(() => {
     if (!open) {
@@ -51,15 +61,16 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
     return null;
   }
 
-  const currentNodeId = history[history.length - 1] ?? project.metadata.startNodeId;
+  const currentFrame = history[history.length - 1];
+  const currentNodeId = currentFrame?.nodeId ?? project.metadata.startNodeId;
+  const runtimeGlobals = currentFrame?.globals ?? new Map<string, boolean | number>();
   const currentNode = nodeMap.get(currentNodeId);
   const visibleChoices = currentNode
     ? currentNode.choices.filter((choice) => isChoiceVisible(choice, globalsById, runtimeGlobals))
     : [];
 
   const handleRestart = () => {
-    setHistory([project.metadata.startNodeId]);
-    setRuntimeGlobals(new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal.defaultValue])));
+    setHistory(createInitialHistory(project));
   };
 
   const handleBack = () => {
@@ -71,13 +82,13 @@ export default function PreviewPlayer({ open, project, onClose }: PreviewPlayerP
       return;
     }
 
-    setRuntimeGlobals((current) => {
-      const next = new Map(current);
-      applyEffects(choice.effects, globalsById, next);
-      return next;
-    });
+    setHistory((currentHistory) => {
+      const currentFrame = currentHistory[currentHistory.length - 1];
+      const nextGlobals = new Map(currentFrame.globals);
+      applyEffects(choice.effects, globalsById, nextGlobals);
 
-    setHistory((currentHistory) => [...currentHistory, targetNodeId]);
+      return [...currentHistory, { nodeId: targetNodeId, globals: nextGlobals }];
+    });
   };
 
   return (

@@ -4,6 +4,7 @@ import {
   type ChoiceSelection,
   type GlobalValueType,
   type NodeColorToken,
+  type StoryAtomicCondition,
   type StoryChoice,
   type StoryCondition,
   type StoryEffect,
@@ -142,7 +143,7 @@ function migrateProject(input: StoryProjectInput): StoryProject {
     })) as StoryGlobal[],
     nodes: input.nodes.map((node) => ({
       ...node,
-      fileTriggers: [],
+      fileTriggers: "fileTriggers" in node ? node.fileTriggers : [],
       choices: node.choices.map((choice) => migrateChoice(choice))
     }))
   };
@@ -194,30 +195,93 @@ function normalizeGlobals(globals: StoryGlobal[]): StoryGlobal[] {
   );
 }
 
+function getConditionValidationError(
+  condition: StoryCondition,
+  globalsById: Map<string, StoryGlobal>,
+  label: string
+): string | null {
+  if (condition.type === "atomic") {
+    const storyGlobal = globalsById.get(condition.globalId);
+    if (!storyGlobal) {
+      return `${label} references a missing global "${condition.globalId}".`;
+    }
+
+    if (!getAllowedOperators(storyGlobal.valueType).includes(condition.operator)) {
+      return `${label} uses an invalid operator for global "${storyGlobal.name}".`;
+    }
+
+    if (storyGlobal.valueType === "boolean" && typeof condition.value !== "boolean") {
+      return `${label} must compare boolean global "${storyGlobal.name}" against true/false.`;
+    }
+
+    if (
+      storyGlobal.valueType === "number" &&
+      (typeof condition.value !== "number" || !Number.isFinite(condition.value))
+    ) {
+      return `${label} must compare number global "${storyGlobal.name}" against a finite number.`;
+    }
+
+    return null;
+  }
+
+  for (let i = 0; i < condition.conditions.length; i++) {
+    const childError = getConditionValidationError(
+      condition.conditions[i],
+      globalsById,
+      `${label} (item ${i + 1})`
+    );
+    if (childError) {
+      return childError;
+    }
+  }
+
+  return null;
+}
+
 function validateCondition(
   condition: StoryCondition,
   globalsById: Map<string, StoryGlobal>,
   label: string
 ): void {
-  const storyGlobal = globalsById.get(condition.globalId);
+  const error = getConditionValidationError(condition, globalsById, label);
+  if (error) {
+    throw new Error(error);
+  }
+}
+
+function getEffectValidationError(
+  effect: StoryEffect,
+  globalsById: Map<string, StoryGlobal>,
+  label: string
+): string | null {
+  const storyGlobal = globalsById.get(effect.globalId);
   if (!storyGlobal) {
-    throw new Error(`${label} references a missing global "${condition.globalId}".`);
+    return `${label} references a missing global "${effect.globalId}".`;
   }
 
-  if (!getAllowedOperators(storyGlobal.valueType).includes(condition.operator)) {
-    throw new Error(`${label} uses an invalid operator for global "${storyGlobal.name}".`);
-  }
-
-  if (storyGlobal.valueType === "boolean" && typeof condition.value !== "boolean") {
-    throw new Error(`${label} must compare boolean global "${storyGlobal.name}" against true/false.`);
+  if (storyGlobal.valueType === "boolean" && effect.operator !== "set") {
+    return `${label} cannot use "${effect.operator}" on boolean global "${storyGlobal.name}".`;
   }
 
   if (
     storyGlobal.valueType === "number" &&
-    (typeof condition.value !== "number" || !Number.isFinite(condition.value))
+    !["set", "change"].includes(effect.operator)
   ) {
-    throw new Error(`${label} must compare number global "${storyGlobal.name}" against a finite number.`);
+    return `${label} uses an invalid operator for number global "${storyGlobal.name}".`;
   }
+
+  if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
+    return `${label} must set boolean global "${storyGlobal.name}" to true/false.`;
+  }
+
+  if (
+    storyGlobal.valueType === "number" &&
+    (typeof effect.value !== "number" || !Number.isFinite(effect.value))
+  ) {
+    return `${label} must use a finite number for global "${storyGlobal.name}".`;
+  }
+
+  return null;
 }
 
 function validateEffect(
@@ -225,31 +289,9 @@ function validateEffect(
   globalsById: Map<string, StoryGlobal>,
   label: string
 ): void {
-  const storyGlobal = globalsById.get(effect.globalId);
-  if (!storyGlobal) {
-    throw new Error(`${label} references a missing global "${effect.globalId}".`);
-  }
-
-  if (storyGlobal.valueType === "boolean" && effect.operator !== "set") {
-    throw new Error(`${label} cannot use "${effect.operator}" on boolean global "${storyGlobal.name}".`);
-  }
-
-  if (
-    storyGlobal.valueType === "number" &&
-    !["set", "change"].includes(effect.operator)
-  ) {
-    throw new Error(`${label} uses an invalid operator for number global "${storyGlobal.name}".`);
-  }
-
-  if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
-    throw new Error(`${label} must set boolean global "${storyGlobal.name}" to true/false.`);
-  }
-
-  if (
-    storyGlobal.valueType === "number" &&
-    (typeof effect.value !== "number" || !Number.isFinite(effect.value))
-  ) {
-    throw new Error(`${label} must use a finite number for global "${storyGlobal.name}".`);
+  const error = getEffectValidationError(effect, globalsById, label);
+  if (error) {
+    throw new Error(error);
   }
 }
 
@@ -514,25 +556,21 @@ function appendConditionValidationErrors(
   globalsById: Map<string, StoryGlobal>,
   label: string
 ): void {
-  const storyGlobal = globalsById.get(condition.globalId);
-  if (!storyGlobal) {
-    errors.push(`${label} references a missing global.`);
+  if (condition.type === "all" || condition.type === "any") {
+    for (let i = 0; i < condition.conditions.length; i++) {
+      appendConditionValidationErrors(
+        errors,
+        condition.conditions[i],
+        globalsById,
+        `${label} (item ${i + 1})`
+      );
+    }
     return;
   }
 
-  if (!getAllowedOperators(storyGlobal.valueType).includes(condition.operator)) {
-    errors.push(`${label} uses an invalid operator for "${storyGlobal.name}".`);
-  }
-
-  if (storyGlobal.valueType === "boolean" && typeof condition.value !== "boolean") {
-    errors.push(`${label} must compare "${storyGlobal.name}" with true/false.`);
-  }
-
-  if (
-    storyGlobal.valueType === "number" &&
-    (typeof condition.value !== "number" || !Number.isFinite(condition.value))
-  ) {
-    errors.push(`${label} must compare "${storyGlobal.name}" with a finite number.`);
+  const error = getConditionValidationError(condition, globalsById, label);
+  if (error) {
+    errors.push(error);
   }
 }
 
@@ -542,32 +580,9 @@ function appendEffectValidationErrors(
   globalsById: Map<string, StoryGlobal>,
   label: string
 ): void {
-  const storyGlobal = globalsById.get(effect.globalId);
-  if (!storyGlobal) {
-    errors.push(`${label} references a missing global.`);
-    return;
-  }
-
-  if (storyGlobal.valueType === "boolean" && effect.operator !== "set") {
-    errors.push(`${label} cannot use "${effect.operator}" on boolean global "${storyGlobal.name}".`);
-  }
-
-  if (
-    storyGlobal.valueType === "number" &&
-    !["set", "change"].includes(effect.operator)
-  ) {
-    errors.push(`${label} uses an invalid operator for "${storyGlobal.name}".`);
-  }
-
-  if (storyGlobal.valueType === "boolean" && typeof effect.value !== "boolean") {
-    errors.push(`${label} must set "${storyGlobal.name}" to true/false.`);
-  }
-
-  if (
-    storyGlobal.valueType === "number" &&
-    (typeof effect.value !== "number" || !Number.isFinite(effect.value))
-  ) {
-    errors.push(`${label} must use a finite number for "${storyGlobal.name}".`);
+  const error = getEffectValidationError(effect, globalsById, label);
+  if (error) {
+    errors.push(error);
   }
 }
 
@@ -597,10 +612,10 @@ export function createConditionForGlobal(storyGlobal: StoryGlobal | undefined): 
   return createDefaultCondition(storyGlobal);
 }
 
-export function normalizeConditionForGlobal(
-  condition: StoryCondition,
+export function normalizeAtomicCondition(
+  condition: StoryAtomicCondition,
   storyGlobal: StoryGlobal | undefined
-): StoryCondition | null {
+): StoryAtomicCondition | null {
   if (!storyGlobal) {
     return null;
   }
@@ -610,9 +625,32 @@ export function normalizeConditionForGlobal(
     : "eq";
 
   return {
+    type: "atomic",
     globalId: storyGlobal.id,
     operator,
     value: coerceConditionValue(storyGlobal.valueType, condition.value)
+  };
+}
+
+export function normalizeCondition(
+  condition: StoryCondition,
+  globals: StoryGlobal[]
+): StoryCondition | null {
+  if (condition.type === "atomic") {
+    const storyGlobal = globals.find((g) => g.id === condition.globalId);
+    if (!storyGlobal) {
+      return null;
+    }
+    return normalizeAtomicCondition(condition, storyGlobal);
+  }
+
+  const normalizedChildren = condition.conditions
+    .map((child) => normalizeCondition(child, globals))
+    .filter((child): child is StoryCondition => child !== null);
+
+  return {
+    type: condition.type,
+    conditions: normalizedChildren
   };
 }
 

@@ -40,6 +40,7 @@ export const exampleProject: StoryProject = {
             branches: [
               {
                 condition: {
+                  type: "atomic",
                   globalId: "global_has_key",
                   operator: "eq",
                   value: true
@@ -48,6 +49,7 @@ export const exampleProject: StoryProject = {
               },
               {
                 condition: {
+                  type: "atomic",
                   globalId: "global_alert_level",
                   operator: "gte",
                   value: 3
@@ -72,6 +74,7 @@ export const exampleProject: StoryProject = {
           id: "choice_hidden_panel",
           text: "Search for the hidden panel",
           visibilityCondition: {
+            type: "atomic",
             globalId: "global_alert_level",
             operator: "lte",
             value: 2

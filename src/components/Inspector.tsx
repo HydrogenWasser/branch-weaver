@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DraggablePanel from "./DraggablePanel";
 import ChoicesEditor from "./ChoicesEditor";
 import FileTriggersEditor from "./FileTriggersEditor";
@@ -32,6 +32,8 @@ export default function Inspector({
   const addChoice = useEditorStore((state) => state.addChoice);
   const [tagInput, setTagInput] = useState("");
   const [fileTriggersEditorOpen, setFileTriggersEditorOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftBody, setDraftBody] = useState("");
   const [inspectorOrder, setInspectorOrder] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem("branch-weaver:inspector-panels");
@@ -61,6 +63,13 @@ export default function Inspector({
     () => TAG_SUGGESTIONS.filter((tag) => !selectedNode?.tags.includes(tag)),
     [selectedNode?.tags]
   );
+
+  useEffect(() => {
+    if (selectedNode) {
+      setDraftTitle(selectedNode.title);
+      setDraftBody(selectedNode.body);
+    }
+  }, [selectedNode?.id]);
 
   const handleAddTag = (tag: string) => {
     if (!selectedNode) {
@@ -98,8 +107,13 @@ export default function Inspector({
             <label className="field">
               <span>Title</span>
               <input
-                value={selectedNode.title}
-                onChange={(event) => updateNode(selectedNode.id, { title: event.target.value })}
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onBlur={() => {
+                  if (draftTitle !== selectedNode.title) {
+                    updateNode(selectedNode.id, { title: draftTitle });
+                  }
+                }}
                 placeholder="Scene title"
               />
             </label>
@@ -107,8 +121,13 @@ export default function Inspector({
               <span>Body</span>
               <textarea
                 rows={5}
-                value={selectedNode.body}
-                onChange={(event) => updateNode(selectedNode.id, { body: event.target.value })}
+                value={draftBody}
+                onChange={(event) => setDraftBody(event.target.value)}
+                onBlur={() => {
+                  if (draftBody !== selectedNode.body) {
+                    updateNode(selectedNode.id, { body: draftBody });
+                  }
+                }}
                 placeholder="Write scene text here"
               />
             </label>

@@ -7,10 +7,12 @@ import DraggablePanel from "./components/DraggablePanel";
 import PreviewPlayer from "./components/PreviewPlayer";
 import SearchPanel from "./components/SearchPanel";
 import TopBar from "./components/TopBar";
+import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
+import { usePanelOrder } from "./hooks/usePanelOrder";
+import { useProjectFileActions } from "./hooks/useProjectFileActions";
 import { buildAutoLayout } from "./lib/layout";
 import { buildNodeSearchIndex, searchNodeIndex } from "./lib/search";
-import { openJsonFile, saveJsonFile, saveJsonFileAs } from "./lib/fileIO";
-import { exportValidationErrors, fileNameFromTitle, parseProjectJson, serializeProject } from "./lib/story";
+import ExportChecksPanel from "./components/ExportChecksPanel";
 import { useEditorStore } from "./store/editorStore";
 import type { XYPosition } from "./types/story";
 
@@ -31,25 +33,18 @@ export default function App() {
   const [choicesEditorOpen, setChoicesEditorOpen] = useState(false);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
-  const [sidebarOrder, setSidebarOrder] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem("branch-weaver:sidebar-panels");
-      return stored ? JSON.parse(stored) : DEFAULT_SIDEBAR_ORDER;
-    } catch {
-      return DEFAULT_SIDEBAR_ORDER;
-    }
-  });
+
+  const { order: sidebarOrder, movePanel: moveSidebarPanel } = usePanelOrder(
+    "branch-weaver:sidebar-panels",
+    DEFAULT_SIDEBAR_ORDER
+  );
 
   const project = useEditorStore((state) => state.project);
+  const nodes = useEditorStore((state) => state.project.nodes);
   const dirty = useEditorStore((state) => state.dirty);
-  const currentFilePath = useEditorStore((state) => state.currentFilePath);
   const lastError = useEditorStore((state) => state.lastError);
   const selection = useEditorStore((state) => state.selection);
-  const newProject = useEditorStore((state) => state.newProject);
-  const loadExample = useEditorStore((state) => state.loadExample);
-  const loadProject = useEditorStore((state) => state.loadProject);
   const updateProjectTitle = useEditorStore((state) => state.updateProjectTitle);
-  const markSaved = useEditorStore((state) => state.markSaved);
   const clearError = useEditorStore((state) => state.clearError);
   const setError = useEditorStore((state) => state.setError);
   const setSelection = useEditorStore((state) => state.setSelection);
@@ -62,9 +57,8 @@ export default function App() {
   const canRedo = useEditorStore((state) => state.canRedo());
 
   const projectTitle = project.metadata.title || "Untitled Story";
-  const exportIssues = useMemo(() => exportValidationErrors(project), [project]);
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const searchIndex = useMemo(() => buildNodeSearchIndex(project), [project]);
+  const searchIndex = useMemo(() => buildNodeSearchIndex(nodes), [nodes]);
   const searchResults = useMemo(
     () => searchNodeIndex(searchIndex, deferredSearchQuery),
     [deferredSearchQuery, searchIndex]
@@ -76,12 +70,15 @@ export default function App() {
         : EMPTY_HIGHLIGHT_SET,
     [deferredSearchQuery, searchResults]
   );
+
   const handleFitReady = useCallback((fit: () => void) => {
     setFitView(() => fit);
   }, []);
+
   const handleViewportCenterReady = useCallback((getCenter: () => XYPosition | null) => {
     setGetViewportCenter(() => getCenter);
   }, []);
+
   const focusNode = useCallback(
     (nodeId: string) => {
       setSelection({ type: "node", nodeId });
@@ -98,6 +95,7 @@ export default function App() {
     },
     [setSelection]
   );
+
   const handleAddNode = useCallback(() => {
     const viewportCenter = getViewportCenter?.();
     const nextPosition = viewportCenter
@@ -110,86 +108,13 @@ export default function App() {
     addNode(nextPosition);
   }, [addNode, getViewportCenter]);
 
-  const handleCreateProject = () => {
-    if (dirty && !window.confirm("Discard current unsaved changes and create a new project?")) {
-      return;
-    }
-
-    clearError();
-    newProject();
+  const handleAutoLayout = useCallback(() => {
+    const positions = buildAutoLayout(project);
+    applyNodeLayout(positions);
     setFitRequest((value) => value + 1);
-  };
+  }, [project, applyNodeLayout]);
 
-  const handleLoadExample = () => {
-    if (dirty && !window.confirm("Discard current unsaved changes and load the example project?")) {
-      return;
-    }
-
-    clearError();
-    loadExample();
-    setFitRequest((value) => value + 1);
-  };
-
-  const handleOpenProject = async () => {
-    try {
-      if (dirty && !window.confirm("Discard current unsaved changes and open another project?")) {
-        return;
-      }
-
-      const opened = await openJsonFile();
-      if (!opened) {
-        return;
-      }
-
-      const nextProject = parseProjectJson(opened.text);
-      loadProject(nextProject, opened.path);
-      clearError();
-      setFitRequest((value) => value + 1);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to open project.";
-      setError(message);
-    }
-  };
-
-  const handleSaveProject = async () => {
-    try {
-      const issues = exportValidationErrors(project);
-      if (issues.length > 0) {
-        setError(`Cannot export JSON until all issues are resolved:\n- ${issues.join("\n- ")}`);
-        return;
-      }
-
-      const contents = serializeProject(project);
-      const filePath = await saveJsonFile(contents, fileNameFromTitle(projectTitle), currentFilePath);
-      markSaved(filePath);
-      clearError();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save project.";
-      setError(message);
-    }
-  };
-
-  const handleSaveProjectAs = async () => {
-    try {
-      const issues = exportValidationErrors(project);
-      if (issues.length > 0) {
-        setError(`Cannot export JSON until all issues are resolved:\n- ${issues.join("\n- ")}`);
-        return;
-      }
-
-      const contents = serializeProject(project);
-      const filePath = await saveJsonFileAs(contents, fileNameFromTitle(projectTitle));
-      if (filePath || !currentFilePath) {
-        markSaved(filePath);
-      }
-      clearError();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save project.";
-      setError(message);
-    }
-  };
-
-  const handleDeleteSelection = () => {
+  const handleDeleteSelection = useCallback(() => {
     if (!selection) {
       return;
     }
@@ -204,23 +129,29 @@ export default function App() {
     }
 
     deleteSelection();
-  };
+  }, [selection, deleteSelection]);
 
-  const handleAutoLayout = () => {
-    const positions = buildAutoLayout(project);
-    applyNodeLayout(positions);
+  const handleAfterLoad = useCallback(() => {
     setFitRequest((value) => value + 1);
-  };
-
-  const moveSidebarPanel = useCallback((fromIndex: number, toIndex: number) => {
-    setSidebarOrder((prev) => {
-      const next = [...prev];
-      const [removed] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, removed);
-      localStorage.setItem("branch-weaver:sidebar-panels", JSON.stringify(next));
-      return next;
-    });
   }, []);
+
+  const {
+    handleCreateProject,
+    handleLoadExample,
+    handleOpenProject,
+    handleSaveProject,
+    handleSaveProjectAs
+  } = useProjectFileActions({ onAfterLoad: handleAfterLoad });
+
+  useEditorShortcuts(dirty, selection, {
+    onNew: handleCreateProject,
+    onOpen: handleOpenProject,
+    onSave: handleSaveProject,
+    onSaveAs: handleSaveProjectAs,
+    onUndo: undo,
+    onRedo: redo,
+    onDelete: handleDeleteSelection
+  });
 
   const renderSidebarPanel = (panelId: string) => {
     switch (panelId) {
@@ -262,20 +193,7 @@ export default function App() {
           />
         );
       case "export-checks":
-        return (
-          <div className="panel">
-            <h3>Export Checks</h3>
-            {exportIssues.length === 0 ? (
-              <p>Ready to export.</p>
-            ) : (
-              <ul className="issue-list">
-                {exportIssues.map((issue) => (
-                  <li key={issue}>{issue}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        );
+        return <ExportChecksPanel />;
       default:
         return null;
     }
@@ -294,56 +212,6 @@ export default function App() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const modifier = event.ctrlKey || event.metaKey;
-
-      if (modifier && event.key.toLowerCase() === "n") {
-        event.preventDefault();
-        handleCreateProject();
-        return;
-      }
-
-      if (modifier && event.key.toLowerCase() === "o") {
-        event.preventDefault();
-        void handleOpenProject();
-        return;
-      }
-
-      if (modifier && event.shiftKey && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void handleSaveProjectAs();
-        return;
-      }
-
-      if (modifier && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void handleSaveProject();
-        return;
-      }
-
-      if (modifier && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        undo();
-        return;
-      }
-
-      if (modifier && event.key.toLowerCase() === "y") {
-        event.preventDefault();
-        redo();
-        return;
-      }
-
-      if (event.key === "Delete" && selection) {
-        event.preventDefault();
-        handleDeleteSelection();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dirty, selection, undo, redo, currentFilePath, project]);
 
   return (
     <div className="app-shell">
