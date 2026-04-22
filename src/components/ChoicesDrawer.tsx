@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+ï»¿import { useEffect, useMemo, useRef } from "react";
 import ChoiceDetailPanel from "./ChoiceDetailPanel";
 import ChoiceListPanel from "./ChoiceListPanel";
 import { useEditorStore } from "../store/editorStore";
@@ -20,6 +20,7 @@ export default function ChoicesDrawer({
 }: ChoicesDrawerProps) {
   const project = useEditorStore((state) => state.project);
   const addChoice = useEditorStore((state) => state.addChoice);
+  const previousNodeIdRef = useRef<string | null>(null);
   const previousChoiceCountRef = useRef(0);
   const node = useMemo(
     () => (nodeId ? project.nodes.find((projectNode) => projectNode.id === nodeId) ?? null : null),
@@ -28,6 +29,7 @@ export default function ChoicesDrawer({
 
   useEffect(() => {
     if (!open) {
+      previousNodeIdRef.current = null;
       previousChoiceCountRef.current = 0;
       return;
     }
@@ -44,20 +46,24 @@ export default function ChoicesDrawer({
 
   useEffect(() => {
     if (!open || !node) {
+      previousNodeIdRef.current = null;
       previousChoiceCountRef.current = 0;
       return;
     }
 
     const currentCount = node.choices.length;
     const previousCount = previousChoiceCountRef.current;
+    const previousNodeId = previousNodeIdRef.current;
+    const isSameNode = previousNodeId === node.id;
     const selectedChoiceExists = choiceId ? node.choices.some((choice) => choice.id === choiceId) : false;
 
-    if (currentCount > previousCount && previousCount > 0) {
+    if (isSameNode && currentCount > previousCount && previousCount > 0) {
       onSelectChoice(node.id, node.choices[currentCount - 1].id);
     } else if (currentCount > 0 && !selectedChoiceExists) {
       onSelectChoice(node.id, node.choices[0].id);
     }
 
+    previousNodeIdRef.current = node.id;
     previousChoiceCountRef.current = currentCount;
   }, [choiceId, node, onSelectChoice, open]);
 
@@ -71,7 +77,7 @@ export default function ChoicesDrawer({
         <div>
           <strong>Choices Workspace</strong>
           <p>
-            {node.title || "Untitled Node"} ¡¤ {node.choices.length} choice{node.choices.length === 1 ? "" : "s"}
+            {node.title || "Untitled Node"} Â· {node.choices.length} choice{node.choices.length === 1 ? "" : "s"}
           </p>
         </div>
         <div className="choices-drawer__header-actions">

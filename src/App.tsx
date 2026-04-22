@@ -116,6 +116,7 @@ export default function App() {
 
   const handleCloseChoicesDrawer = useCallback(() => {
     setChoicesDrawerOpen(false);
+    setChoicesDrawerNodeId(null);
     setChoicesDrawerChoiceId(null);
     if (choicesDrawerNodeId) {
       setSelection({ type: "node", nodeId: choicesDrawerNodeId });
@@ -187,14 +188,30 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (selection?.type !== "choice") {
+    if (!selection) {
       return;
     }
 
-    setChoicesDrawerOpen(true);
+    if (selection.type === "choice") {
+      setChoicesDrawerOpen(true);
+      setChoicesDrawerNodeId(selection.nodeId);
+      setChoicesDrawerChoiceId(selection.choiceId);
+      return;
+    }
+
+    if (!choicesDrawerOpen) {
+      return;
+    }
+
+    const selectedNode = project.nodes.find((node) => node.id === selection.nodeId);
+    const nextChoiceId =
+      selectedNode?.choices.some((choice) => choice.id === choicesDrawerChoiceId)
+        ? choicesDrawerChoiceId
+        : selectedNode?.choices[0]?.id ?? null;
+
     setChoicesDrawerNodeId(selection.nodeId);
-    setChoicesDrawerChoiceId(selection.choiceId);
-  }, [selection]);
+    setChoicesDrawerChoiceId(nextChoiceId);
+  }, [choicesDrawerChoiceId, choicesDrawerOpen, project.nodes, selection]);
 
   const renderSidebarPanel = (panelId: string) => {
     switch (panelId) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DraggablePanel from "./DraggablePanel";
 import FileTriggersEditor from "./FileTriggersEditor";
 import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
@@ -25,6 +25,8 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
   const [fileTriggersEditorOpen, setFileTriggersEditorOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftBody, setDraftBody] = useState("");
+  const titleEditNodeIdRef = useRef<string | null>(null);
+  const bodyEditNodeIdRef = useRef<string | null>(null);
   const [inspectorOrder, setInspectorOrder] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem("branch-weaver:inspector-panels");
@@ -56,11 +58,41 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
   );
 
   useEffect(() => {
-    if (selectedNode) {
-      setDraftTitle(selectedNode.title);
-      setDraftBody(selectedNode.body);
-    }
+    titleEditNodeIdRef.current = null;
+    bodyEditNodeIdRef.current = null;
+    setDraftTitle(selectedNode?.title ?? "");
+    setDraftBody(selectedNode?.body ?? "");
   }, [selectedNode?.id]);
+
+  const commitTitle = useCallback(
+    (nodeId: string | null) => {
+      if (!nodeId) {
+        return;
+      }
+
+      const node = project.nodes.find((projectNode) => projectNode.id === nodeId);
+      if (node && draftTitle !== node.title) {
+        updateNode(nodeId, { title: draftTitle });
+      }
+      titleEditNodeIdRef.current = null;
+    },
+    [draftTitle, project.nodes, updateNode]
+  );
+
+  const commitBody = useCallback(
+    (nodeId: string | null) => {
+      if (!nodeId) {
+        return;
+      }
+
+      const node = project.nodes.find((projectNode) => projectNode.id === nodeId);
+      if (node && draftBody !== node.body) {
+        updateNode(nodeId, { body: draftBody });
+      }
+      bodyEditNodeIdRef.current = null;
+    },
+    [draftBody, project.nodes, updateNode]
+  );
 
   const handleAddTag = (tag: string) => {
     if (!selectedNode) {
@@ -100,12 +132,11 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
               <span>Title</span>
               <input
                 value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
-                onBlur={() => {
-                  if (draftTitle !== selectedNode.title) {
-                    updateNode(selectedNode.id, { title: draftTitle });
-                  }
+                onFocus={() => {
+                  titleEditNodeIdRef.current = selectedNode.id;
                 }}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onBlur={() => commitTitle(titleEditNodeIdRef.current)}
                 placeholder="Scene title"
               />
             </label>
@@ -114,12 +145,11 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
               <textarea
                 rows={5}
                 value={draftBody}
-                onChange={(event) => setDraftBody(event.target.value)}
-                onBlur={() => {
-                  if (draftBody !== selectedNode.body) {
-                    updateNode(selectedNode.id, { body: draftBody });
-                  }
+                onFocus={() => {
+                  bodyEditNodeIdRef.current = selectedNode.id;
                 }}
+                onChange={(event) => setDraftBody(event.target.value)}
+                onBlur={() => commitBody(bodyEditNodeIdRef.current)}
                 placeholder="Write scene text here"
               />
             </label>
