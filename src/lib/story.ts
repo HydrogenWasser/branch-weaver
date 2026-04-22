@@ -67,6 +67,38 @@ export function createNode(position = { x: 80, y: 80 }): StoryNode {
   };
 }
 
+export function cloneNodeAsNewNode(node: StoryNode, position: StoryNode["position"]): StoryNode {
+  return {
+    ...node,
+    id: createId("node"),
+    position,
+    tags: sortNodeTags(node.tags.filter((tag) => tag !== "Start")),
+    fileTriggers: [...node.fileTriggers],
+    choices: node.choices.map((choice) => ({
+      ...choice,
+      id: createId("choice"),
+      effects: choice.effects.map((effect) => ({ ...effect })),
+      visibilityCondition: choice.visibilityCondition
+        ? JSON.parse(JSON.stringify(choice.visibilityCondition))
+        : null,
+      route:
+        choice.route.mode === "direct"
+          ? {
+              mode: "direct",
+              targetNodeId: null
+            }
+          : {
+              mode: "conditional",
+              branches: choice.route.branches.map((branch) => ({
+                condition: JSON.parse(JSON.stringify(branch.condition)) as StoryCondition,
+                targetNodeId: null
+              })),
+              fallbackTargetNodeId: null
+            }
+    }))
+  };
+}
+
 export function createEmptyProject(): StoryProject {
   const startNode = {
     ...createNode({ x: 120, y: 120 }),

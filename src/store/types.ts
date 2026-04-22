@@ -4,6 +4,7 @@ import type {
   GlobalValueType,
   NodeColorToken,
   StoryCondition,
+  StoryNode,
   StoryProject,
   ViewportState,
   XYPosition
@@ -27,6 +28,7 @@ export type EditorStore = {
   currentFilePath: string | null;
   dirty: boolean;
   lastError: string | null;
+  copiedNode: StoryNode | null;
   historyPast: HistoryEntry[];
   historyFuture: HistoryEntry[];
   lastSavedSnapshot: string;
@@ -39,6 +41,8 @@ export type EditorStore = {
   setError: (message: string | null) => void;
   setSelection: (selection: EditorSelection) => void;
   setViewport: (viewport: ViewportState) => void;
+  copySelectedNode: () => void;
+  pasteCopiedNode: (position: XYPosition) => void;
   addGlobal: (valueType: GlobalValueType) => void;
   updateGlobalName: (globalId: string, name: string) => void;
   updateGlobalValueType: (globalId: string, valueType: GlobalValueType) => void;

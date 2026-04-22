@@ -1,12 +1,49 @@
-import { createNode } from "../../lib/story";
+import { cloneNodeAsNewNode, createNode } from "../../lib/story";
 import { replaceRouteTargetNodeId } from "../../lib/conditions";
 import { normalizeNodeTag, sortNodeTags } from "../../lib/nodeTags";
+import type { StoryNode } from "../../types/story";
 import type { NodeColorToken, XYPosition } from "../../types/story";
 import { syncStartTag, withProjectMutation } from "../storeUtils";
 import type { EditorGet, EditorSet, NodePatch } from "../types";
 
+function duplicateNodeForClipboard(node: StoryNode): StoryNode {
+  return JSON.parse(JSON.stringify(node)) as StoryNode;
+}
+
 export function createNodeSlice(set: EditorSet, _get: EditorGet) {
   return {
+    copySelectedNode: () =>
+      set((state) => {
+        if (state.selection?.type !== "node") {
+          return state;
+        }
+
+        const selectedNode = state.project.nodes.find((node) => node.id === state.selection?.nodeId);
+        if (!selectedNode) {
+          return state;
+        }
+
+        return {
+          copiedNode: duplicateNodeForClipboard(selectedNode),
+          lastError: null
+        };
+      }),
+    pasteCopiedNode: (position: XYPosition) =>
+      set((state) => {
+        const copiedNode = state.copiedNode;
+        if (!copiedNode) {
+          return state;
+        }
+
+        return withProjectMutation(state, (project) => {
+          const duplicatedNode = cloneNodeAsNewNode(copiedNode, position);
+          project.nodes.push(duplicatedNode);
+          return {
+            project,
+            selection: { type: "node", nodeId: duplicatedNode.id }
+          };
+        });
+      }),
     addNode: (position?: XYPosition) =>
       set((state) =>
         withProjectMutation(state, (project) => {
@@ -217,6 +254,6 @@ export function createNodeSlice(set: EditorSet, _get: EditorGet) {
             selection: { type: "node", nodeId }
           };
         })
-      )
+      ),
   };
 }

@@ -96,6 +96,7 @@ export function resetState(
   | "currentFilePath"
   | "dirty"
   | "lastError"
+  | "copiedNode"
   | "historyPast"
   | "historyFuture"
   | "lastSavedSnapshot"
@@ -108,6 +109,7 @@ export function resetState(
     currentFilePath: filePath,
     dirty: false,
     lastError: null,
+    copiedNode: null,
     historyPast: [],
     historyFuture: [],
     lastSavedSnapshot: snapshotString(cleanProject)

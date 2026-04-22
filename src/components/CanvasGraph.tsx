@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import ReactFlow, {
   applyNodeChanges,
   Background,
@@ -15,7 +15,8 @@ import "reactflow/dist/style.css";
 import { formatConditionSummary } from "../lib/conditions";
 import { getNodeMiniMapColor } from "../lib/nodeAppearance";
 import { useEditorStore } from "../store/editorStore";
-import type { XYPosition } from "../types/story";
+import type { StoryChoice, StoryNode, XYPosition } from "../types/story";
+import MiniMapNode from "./MiniMapNode";
 import StoryNodeCard, { type StoryNodeData } from "./StoryNodeCard";
 
 type CanvasGraphProps = {
@@ -33,6 +34,12 @@ const nodeTypes = {
   storyNode: StoryNodeCard
 };
 
+const MINIMAP_DENSE_THRESHOLD = 60;
+const MINIMAP_OVERLOADED_THRESHOLD = 180;
+
+type MiniMapMode = "normal" | "dense" | "overloaded";
+type MiniMapNodeCategory = "selected" | "search" | "adjacent" | "normal";
+
 function buildEdgeId(nodeId: string, choiceId: string, variant = "direct"): string {
   return `${nodeId}::${choiceId}::${variant}`;
 }
@@ -40,6 +47,77 @@ function buildEdgeId(nodeId: string, choiceId: string, variant = "direct"): stri
 function parseEdgeId(edgeId: string): { nodeId: string; choiceId: string } | null {
   const [nodeId, choiceId] = edgeId.split("::");
   return nodeId && choiceId ? { nodeId, choiceId } : null;
+}
+
+function getMiniMapMode(nodeCount: number): MiniMapMode {
+  if (nodeCount > MINIMAP_OVERLOADED_THRESHOLD) {
+    return "overloaded";
+  }
+
+  if (nodeCount > MINIMAP_DENSE_THRESHOLD) {
+    return "dense";
+  }
+
+  return "normal";
+}
+
+function collectChoiceTargets(choice: StoryChoice): string[] {
+  if (choice.route.mode === "direct") {
+    return choice.route.targetNodeId ? [choice.route.targetNodeId] : [];
+  }
+
+  const branchTargets = choice.route.branches.flatMap((branch) =>
+    branch.targetNodeId ? [branch.targetNodeId] : []
+  );
+
+  return choice.route.fallbackTargetNodeId
+    ? [...branchTargets, choice.route.fallbackTargetNodeId]
+    : branchTargets;
+}
+
+function buildAdjacentNodeIds(nodes: StoryNode[], selectedNodeId: string | null): Set<string> {
+  if (!selectedNodeId) {
+    return new Set<string>();
+  }
+
+  const adjacentNodeIds = new Set<string>();
+
+  for (const storyNode of nodes) {
+    const targetNodeIds = storyNode.choices.flatMap(collectChoiceTargets);
+
+    if (storyNode.id === selectedNodeId) {
+      targetNodeIds.forEach((targetNodeId) => adjacentNodeIds.add(targetNodeId));
+      continue;
+    }
+
+    if (targetNodeIds.includes(selectedNodeId)) {
+      adjacentNodeIds.add(storyNode.id);
+    }
+  }
+
+  adjacentNodeIds.delete(selectedNodeId);
+  return adjacentNodeIds;
+}
+
+function getMiniMapNodeCategory(
+  nodeId: string,
+  selectedNodeId: string | null,
+  highlightedNodeIds: Set<string>,
+  adjacentNodeIds: Set<string>
+): MiniMapNodeCategory {
+  if (nodeId === selectedNodeId) {
+    return "selected";
+  }
+
+  if (highlightedNodeIds.has(nodeId)) {
+    return "search";
+  }
+
+  if (adjacentNodeIds.has(nodeId)) {
+    return "adjacent";
+  }
+
+  return "normal";
 }
 
 export default function CanvasGraph({
@@ -60,6 +138,12 @@ export default function CanvasGraph({
   const setSelection = useEditorStore((state) => state.setSelection);
   const moveNode = useEditorStore((state) => state.moveNode);
   const connectChoice = useEditorStore((state) => state.connectChoice);
+  const selectedNodeId = selection?.type === "choice" ? selection.nodeId : selection?.nodeId ?? null;
+  const miniMapMode = useMemo(() => getMiniMapMode(nodes.length), [nodes.length]);
+  const adjacentNodeIds = useMemo(
+    () => buildAdjacentNodeIds(nodes, selectedNodeId),
+    [nodes, selectedNodeId]
+  );
   const globalsById = useMemo(
     () => new Map(globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
     [globals]
@@ -294,12 +378,77 @@ export default function CanvasGraph({
   }, [onRequestFocusNode]);
 
   const miniMapNodeColor = useCallback((node: Node) => {
-    if (highlightedNodeIds.has(node.id)) {
+    const category = getMiniMapNodeCategory(node.id, selectedNodeId, highlightedNodeIds, adjacentNodeIds);
+
+    if (category === "selected") {
+      return "#f4d2ad";
+    }
+
+    if (category === "search") {
       return "#d68e3f";
     }
 
+    if (category === "adjacent") {
+      return "#ead7bd";
+    }
+
     return getNodeMiniMapColor(node.data.storyNode.colorToken);
-  }, [highlightedNodeIds]);
+  }, [adjacentNodeIds, highlightedNodeIds, selectedNodeId]);
+
+  const miniMapNodeStrokeColor = useCallback((node: Node) => {
+    const category = getMiniMapNodeCategory(node.id, selectedNodeId, highlightedNodeIds, adjacentNodeIds);
+
+    if (category === "selected") {
+      return "#7b4520";
+    }
+
+    if (category === "search") {
+      return "#b5641f";
+    }
+
+    if (category === "adjacent") {
+      return "#8b6d50";
+    }
+
+    if (miniMapMode === "normal") {
+      return "rgba(106, 77, 51, 0.34)";
+    }
+
+    if (miniMapMode === "dense") {
+      return "rgba(106, 77, 51, 0.14)";
+    }
+
+    return "rgba(106, 77, 51, 0.1)";
+  }, [adjacentNodeIds, highlightedNodeIds, miniMapMode, selectedNodeId]);
+
+  const miniMapNodeClassName = useCallback((node: Node) => {
+    const category = getMiniMapNodeCategory(node.id, selectedNodeId, highlightedNodeIds, adjacentNodeIds);
+    const classNames = [
+      "story-minimap__node",
+      `story-minimap__node--${miniMapMode}`,
+      `story-minimap__node--${category}`
+    ];
+
+    if (miniMapMode === "dense" && category === "normal") {
+      classNames.push("story-minimap__node--muted");
+    }
+
+    if (miniMapMode === "overloaded" && category === "normal") {
+      classNames.push("story-minimap__node--dot");
+    }
+
+    return classNames.join(" ");
+  }, [adjacentNodeIds, highlightedNodeIds, miniMapMode, selectedNodeId]);
+
+  const handleMiniMapClick = useCallback((event: MouseEvent, position: XYPosition) => {
+    event.stopPropagation();
+    reactFlowRef.current?.setCenter(position.x, position.y, { duration: 220 });
+  }, []);
+
+  const handleMiniMapNodeClick = useCallback((event: MouseEvent, node: Node) => {
+    event.stopPropagation();
+    onRequestFocusNode(node.id);
+  }, [onRequestFocusNode]);
 
   return (
     <div ref={canvasWrapperRef} className="canvas-graph">
@@ -328,7 +477,17 @@ export default function CanvasGraph({
           pannable
           zoomable
           nodeColor={miniMapNodeColor}
-          maskColor="rgba(245, 239, 231, 0.72)"
+          nodeStrokeColor={miniMapNodeStrokeColor}
+          nodeClassName={miniMapNodeClassName}
+          nodeComponent={MiniMapNode}
+          nodeBorderRadius={4}
+          nodeStrokeWidth={1.4}
+          maskColor="rgba(245, 239, 231, 0.62)"
+          maskStrokeColor="rgba(121, 82, 47, 0.72)"
+          maskStrokeWidth={2}
+          onClick={handleMiniMapClick}
+          onNodeClick={handleMiniMapNodeClick}
+          ariaLabel="Canvas minimap navigator"
           className="story-minimap"
         />
       </ReactFlow>

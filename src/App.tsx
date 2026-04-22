@@ -51,6 +51,9 @@ export default function App() {
   const clearError = useEditorStore((state) => state.clearError);
   const setSelection = useEditorStore((state) => state.setSelection);
   const addNode = useEditorStore((state) => state.addNode);
+  const copiedNode = useEditorStore((state) => state.copiedNode);
+  const copySelectedNode = useEditorStore((state) => state.copySelectedNode);
+  const pasteCopiedNode = useEditorStore((state) => state.pasteCopiedNode);
   const applyNodeLayout = useEditorStore((state) => state.applyNodeLayout);
   const deleteSelection = useEditorStore((state) => state.deleteSelection);
   const undo = useEditorStore((state) => state.undo);
@@ -80,6 +83,16 @@ export default function App() {
   const handleViewportCenterReady = useCallback((getCenter: () => XYPosition | null) => {
     setGetViewportCenter(() => getCenter);
   }, []);
+
+  const getNextNewNodePosition = useCallback((): XYPosition => {
+    const viewportCenter = getViewportCenter?.();
+    return viewportCenter
+      ? {
+          x: Math.round(viewportCenter.x - DEFAULT_NEW_NODE_SIZE.width / 2),
+          y: Math.round(viewportCenter.y - DEFAULT_NEW_NODE_SIZE.height / 2)
+        }
+      : DEFAULT_NEW_NODE_POSITION;
+  }, [getViewportCenter]);
 
   const focusNode = useCallback(
     (nodeId: string) => {
@@ -131,16 +144,16 @@ export default function App() {
   );
 
   const handleAddNode = useCallback(() => {
-    const viewportCenter = getViewportCenter?.();
-    const nextPosition = viewportCenter
-      ? {
-          x: Math.round(viewportCenter.x - DEFAULT_NEW_NODE_SIZE.width / 2),
-          y: Math.round(viewportCenter.y - DEFAULT_NEW_NODE_SIZE.height / 2)
-        }
-      : DEFAULT_NEW_NODE_POSITION;
+    addNode(getNextNewNodePosition());
+  }, [addNode, getNextNewNodePosition]);
 
-    addNode(nextPosition);
-  }, [addNode, getViewportCenter]);
+  const handleCopyNode = useCallback(() => {
+    copySelectedNode();
+  }, [copySelectedNode]);
+
+  const handlePasteNode = useCallback(() => {
+    pasteCopiedNode(getNextNewNodePosition());
+  }, [getNextNewNodePosition, pasteCopiedNode]);
 
   const handleAutoLayout = useCallback(() => {
     const positions = buildAutoLayout(project);
@@ -177,14 +190,16 @@ export default function App() {
     handleSaveProjectAs
   } = useProjectFileActions({ onAfterLoad: handleAfterLoad });
 
-  useEditorShortcuts(dirty, selection, {
+  useEditorShortcuts(dirty, selection, copiedNode !== null, {
     onNew: handleCreateProject,
     onOpen: handleOpenProject,
     onSave: handleSaveProject,
     onSaveAs: handleSaveProjectAs,
     onUndo: undo,
     onRedo: redo,
-    onDelete: handleDeleteSelection
+    onDelete: handleDeleteSelection,
+    onCopy: handleCopyNode,
+    onPaste: handlePasteNode
   });
 
   useEffect(() => {
