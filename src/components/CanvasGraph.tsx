@@ -35,7 +35,7 @@ const nodeTypes = {
 };
 
 const MINIMAP_DENSE_THRESHOLD = 60;
-const MINIMAP_OVERLOADED_THRESHOLD = 180;
+const MINIMAP_OVERLOADED_THRESHOLD = 120;
 
 type MiniMapMode = "normal" | "dense" | "overloaded";
 type MiniMapNodeCategory = "selected" | "search" | "adjacent" | "normal";
@@ -140,6 +140,13 @@ export default function CanvasGraph({
   const connectChoice = useEditorStore((state) => state.connectChoice);
   const selectedNodeId = selection?.type === "choice" ? selection.nodeId : selection?.nodeId ?? null;
   const miniMapMode = useMemo(() => getMiniMapMode(nodes.length), [nodes.length]);
+  const miniMapClassName = useMemo(
+    () =>
+      `story-minimap${miniMapMode === "overloaded" ? " story-minimap--overview-only" : ""}${
+        miniMapMode === "dense" ? " story-minimap--dense" : ""
+      }`,
+    [miniMapMode]
+  );
   const adjacentNodeIds = useMemo(
     () => buildAdjacentNodeIds(nodes, selectedNodeId),
     [nodes, selectedNodeId]
@@ -475,7 +482,7 @@ export default function CanvasGraph({
         <Background color="#d7d4cd" gap={24} size={1.2} />
         <MiniMap
           pannable
-          zoomable
+          zoomable={miniMapMode !== "overloaded"}
           nodeColor={miniMapNodeColor}
           nodeStrokeColor={miniMapNodeStrokeColor}
           nodeClassName={miniMapNodeClassName}
@@ -488,7 +495,7 @@ export default function CanvasGraph({
           onClick={handleMiniMapClick}
           onNodeClick={handleMiniMapNodeClick}
           ariaLabel="Canvas minimap navigator"
-          className="story-minimap"
+          className={miniMapClassName}
         />
       </ReactFlow>
     </div>

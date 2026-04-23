@@ -6,8 +6,10 @@ import ExportChecksPanel from "./components/ExportChecksPanel";
 import GlobalsEditor from "./components/GlobalsEditor";
 import GlobalsPanel from "./components/GlobalsPanel";
 import Inspector from "./components/Inspector";
+import MapSummaryPanel from "./components/MapSummaryPanel";
 import PreviewPlayer from "./components/PreviewPlayer";
 import SearchPanel from "./components/SearchPanel";
+import StoryMapDrawer from "./components/StoryMapDrawer";
 import TopBar from "./components/TopBar";
 import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { usePanelOrder } from "./hooks/usePanelOrder";
@@ -15,12 +17,55 @@ import { useProjectFileActions } from "./hooks/useProjectFileActions";
 import { buildAutoLayout } from "./lib/layout";
 import { buildNodeSearchIndex, searchNodeIndex } from "./lib/search";
 import { useEditorStore } from "./store/editorStore";
-import type { XYPosition } from "./types/story";
+import type { StoryProject, XYPosition } from "./types/story";
 
 const EMPTY_HIGHLIGHT_SET = new Set<string>();
 const DEFAULT_NEW_NODE_POSITION = { x: 240, y: 240 };
 const DEFAULT_NEW_NODE_SIZE = { width: 260, height: 132 };
-const DEFAULT_SIDEBAR_ORDER = ["globals", "canvas", "search", "export-checks"];
+const DEFAULT_SIDEBAR_ORDER = ["globals", "canvas", "story-map", "search", "export-checks"];
+const PROJECT_BOUNDS_NODE_WIDTH = 260;
+const PROJECT_BOUNDS_NODE_HEIGHT = 180;
+const LARGE_PROJECT_WIDTH_THRESHOLD = 8000;
+const LARGE_PROJECT_ASPECT_RATIO_THRESHOLD = 4.5;
+
+function getProjectBounds(project: StoryProject): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+} | null {
+  if (project.nodes.length === 0) {
+    return null;
+  }
+
+  const minX = Math.min(...project.nodes.map((node) => node.position.x));
+  const maxX = Math.max(...project.nodes.map((node) => node.position.x + PROJECT_BOUNDS_NODE_WIDTH));
+  const minY = Math.min(...project.nodes.map((node) => node.position.y));
+  const maxY = Math.max(...project.nodes.map((node) => node.position.y + PROJECT_BOUNDS_NODE_HEIGHT));
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+}
+
+function shouldFocusStartNodeOnLoad(project: StoryProject): boolean {
+  const bounds = getProjectBounds(project);
+  if (!bounds) {
+    return false;
+  }
+
+  return (
+    bounds.width > LARGE_PROJECT_WIDTH_THRESHOLD ||
+    bounds.width / Math.max(bounds.height, 1) > LARGE_PROJECT_ASPECT_RATIO_THRESHOLD
+  );
+}
 
 export default function App() {
   const [fitRequest, setFitRequest] = useState(0);
@@ -31,6 +76,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [globalsEditorOpen, setGlobalsEditorOpen] = useState(false);
+  const [storyMapOpen, setStoryMapOpen] = useState(false);
+  const [storyMapGroupName, setStoryMapGroupName] = useState<string | null>(null);
   const [choicesDrawerOpen, setChoicesDrawerOpen] = useState(false);
   const [choicesDrawerNodeId, setChoicesDrawerNodeId] = useState<string | null>(null);
   const [choicesDrawerChoiceId, setChoicesDrawerChoiceId] = useState<string | null>(null);
@@ -62,6 +109,7 @@ export default function App() {
   const canRedo = useEditorStore((state) => state.canRedo());
 
   const projectTitle = project.metadata.title || "Untitled Story";
+  const selectedNodeId = selection?.type === "choice" ? selection.nodeId : selection?.nodeId ?? null;
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const searchIndex = useMemo(() => buildNodeSearchIndex(nodes), [nodes]);
   const searchResults = useMemo(
@@ -127,6 +175,11 @@ export default function App() {
     [setSelection]
   );
 
+  const handleOpenStoryMap = useCallback((groupName?: string | null) => {
+    setStoryMapGroupName(groupName ?? null);
+    setStoryMapOpen(true);
+  }, []);
+
   const handleCloseChoicesDrawer = useCallback(() => {
     setChoicesDrawerOpen(false);
     setChoicesDrawerNodeId(null);
@@ -178,9 +231,14 @@ export default function App() {
     deleteSelection();
   }, [selection, deleteSelection]);
 
-  const handleAfterLoad = useCallback(() => {
+  const handleAfterLoad = useCallback((nextProject: StoryProject) => {
+    if (shouldFocusStartNodeOnLoad(nextProject)) {
+      focusNode(nextProject.metadata.startNodeId);
+      return;
+    }
+
     setFitRequest((value) => value + 1);
-  }, []);
+  }, [focusNode]);
 
   const {
     handleCreateProject,
@@ -265,6 +323,15 @@ export default function App() {
             results={searchResults}
             onQueryChange={setSearchQuery}
             onSelectNode={focusNode}
+          />
+        );
+      case "story-map":
+        return (
+          <MapSummaryPanel
+            nodes={project.nodes}
+            selectedNodeId={selectedNodeId}
+            onOpenMap={handleOpenStoryMap}
+            onFocusNode={focusNode}
           />
         );
       case "export-checks":
@@ -362,6 +429,16 @@ export default function App() {
             onRequestFocusNode={focusNode}
             onRequestEditChoice={handleEditChoice}
           />
+          {storyMapOpen ? (
+            <StoryMapDrawer
+              open={storyMapOpen}
+              nodes={project.nodes}
+              selectedNodeId={selectedNodeId}
+              initialGroupName={storyMapGroupName}
+              onClose={() => setStoryMapOpen(false)}
+              onSelectNode={focusNode}
+            />
+          ) : null}
           <ChoicesDrawer
             open={choicesDrawerOpen}
             nodeId={choicesDrawerNodeId}

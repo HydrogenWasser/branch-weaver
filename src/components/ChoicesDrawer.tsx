@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import ChoiceDetailPanel from "./ChoiceDetailPanel";
 import ChoiceListPanel from "./ChoiceListPanel";
 import { useEditorStore } from "../store/editorStore";
@@ -11,6 +11,19 @@ type ChoicesDrawerProps = {
   onSelectChoice: (nodeId: string, choiceId: string) => void;
 };
 
+const DEFAULT_DRAWER_WIDTH = 680;
+const MIN_DRAWER_WIDTH = 560;
+const MAX_DRAWER_WIDTH = 980;
+
+function clampDrawerWidth(width: number): number {
+  if (typeof window === "undefined") {
+    return Math.min(Math.max(width, MIN_DRAWER_WIDTH), MAX_DRAWER_WIDTH);
+  }
+
+  const viewportLimit = Math.max(MIN_DRAWER_WIDTH, window.innerWidth - 32);
+  return Math.min(Math.max(width, MIN_DRAWER_WIDTH), Math.min(viewportLimit, MAX_DRAWER_WIDTH));
+}
+
 export default function ChoicesDrawer({
   open,
   nodeId,
@@ -22,6 +35,7 @@ export default function ChoicesDrawer({
   const addChoice = useEditorStore((state) => state.addChoice);
   const previousNodeIdRef = useRef<string | null>(null);
   const previousChoiceCountRef = useRef(0);
+  const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const node = useMemo(
     () => (nodeId ? project.nodes.find((projectNode) => projectNode.id === nodeId) ?? null : null),
     [nodeId, project.nodes]
@@ -31,6 +45,7 @@ export default function ChoicesDrawer({
     if (!open) {
       previousNodeIdRef.current = null;
       previousChoiceCountRef.current = 0;
+      document.body.classList.remove("is-resizing-choices-drawer");
       return;
     }
 
@@ -41,8 +56,25 @@ export default function ChoicesDrawer({
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.classList.remove("is-resizing-choices-drawer");
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [onClose, open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleResize = () => {
+      setDrawerWidth((currentWidth) => clampDrawerWidth(currentWidth));
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !node) {
@@ -67,12 +99,47 @@ export default function ChoicesDrawer({
     previousChoiceCountRef.current = currentCount;
   }, [choiceId, node, onSelectChoice, open]);
 
+  const handleResizeStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= 920) {
+      return;
+    }
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = drawerWidth;
+
+    document.body.classList.add("is-resizing-choices-drawer");
+
+    const handlePointerMove = (moveEvent: MouseEvent) => {
+      const deltaX = startX - moveEvent.clientX;
+      setDrawerWidth(clampDrawerWidth(startWidth + deltaX));
+    };
+
+    const handlePointerUp = () => {
+      document.body.classList.remove("is-resizing-choices-drawer");
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", handlePointerUp);
+    };
+
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", handlePointerUp);
+  };
+
   if (!open || !node) {
     return null;
   }
 
   return (
-    <aside className="choices-drawer" aria-label="Choices drawer">
+    <aside className="choices-drawer" aria-label="Choices drawer" style={{ width: `${drawerWidth}px` }}>
+      <div
+        className="choices-drawer__resize-handle"
+        role="presentation"
+        aria-hidden="true"
+        onMouseDown={handleResizeStart}
+      >
+        <span className="choices-drawer__resize-grip" />
+      </div>
+
       <div className="choices-drawer__header">
         <div>
           <strong>Choices Workspace</strong>

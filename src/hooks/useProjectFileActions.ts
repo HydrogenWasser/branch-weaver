@@ -7,8 +7,9 @@ import {
   serializeProject
 } from "../lib/story";
 import { useEditorStore } from "../store/editorStore";
+import type { StoryProject } from "../types/story";
 
-export function useProjectFileActions(options: { onAfterLoad: () => void }) {
+export function useProjectFileActions(options: { onAfterLoad: (project: StoryProject) => void }) {
   const dirty = useEditorStore((state) => state.dirty);
   const project = useEditorStore((state) => state.project);
   const currentFilePath = useEditorStore((state) => state.currentFilePath);
@@ -28,7 +29,7 @@ export function useProjectFileActions(options: { onAfterLoad: () => void }) {
 
     clearError();
     newProject();
-    options.onAfterLoad();
+    options.onAfterLoad(useEditorStore.getState().project);
   }, [dirty, newProject, clearError, options.onAfterLoad]);
 
   const handleLoadExample = useCallback(() => {
@@ -38,7 +39,7 @@ export function useProjectFileActions(options: { onAfterLoad: () => void }) {
 
     clearError();
     loadExample();
-    options.onAfterLoad();
+    options.onAfterLoad(useEditorStore.getState().project);
   }, [dirty, loadExample, clearError, options.onAfterLoad]);
 
   const handleOpenProject = useCallback(async () => {
@@ -55,7 +56,7 @@ export function useProjectFileActions(options: { onAfterLoad: () => void }) {
       const nextProject = parseProjectJson(opened.text);
       loadProject(nextProject, opened.path);
       clearError();
-      options.onAfterLoad();
+      options.onAfterLoad(useEditorStore.getState().project);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to open project.";
       setError(message);

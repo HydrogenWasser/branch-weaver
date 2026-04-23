@@ -1,10 +1,23 @@
 import { useCallback, useState } from "react";
 
+function normalizeOrder(order: string[], defaultOrder: string[]): string[] {
+  const knownPanels = new Set(defaultOrder);
+  const nextOrder = order.filter((panelId) => knownPanels.has(panelId));
+
+  for (const panelId of defaultOrder) {
+    if (!nextOrder.includes(panelId)) {
+      nextOrder.push(panelId);
+    }
+  }
+
+  return nextOrder;
+}
+
 export function usePanelOrder(storageKey: string, defaultOrder: string[]) {
   const [order, setOrder] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem(storageKey);
-      return stored ? JSON.parse(stored) : defaultOrder;
+      return stored ? normalizeOrder(JSON.parse(stored), defaultOrder) : defaultOrder;
     } catch {
       return defaultOrder;
     }
@@ -16,11 +29,11 @@ export function usePanelOrder(storageKey: string, defaultOrder: string[]) {
         const next = [...prev];
         const [removed] = next.splice(fromIndex, 1);
         next.splice(toIndex, 0, removed);
-        localStorage.setItem(storageKey, JSON.stringify(next));
+        localStorage.setItem(storageKey, JSON.stringify(normalizeOrder(next, defaultOrder)));
         return next;
       });
     },
-    [storageKey]
+    [defaultOrder, storageKey]
   );
 
   return { order, movePanel };
