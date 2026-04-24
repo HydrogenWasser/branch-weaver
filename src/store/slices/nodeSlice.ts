@@ -1,4 +1,4 @@
-import { cloneNodeAsNewNode, createNode } from "../../lib/story";
+import { cloneNodeAsNewNode, createNode, deepCloneStoryValue } from "../../lib/story";
 import { replaceRouteTargetNodeId } from "../../lib/conditions";
 import { normalizeNodeTag, sortNodeTags } from "../../lib/nodeTags";
 import type { StoryNode } from "../../types/story";
@@ -7,7 +7,7 @@ import { syncStartTag, withProjectMutation } from "../storeUtils";
 import type { EditorGet, EditorSet, NodePatch } from "../types";
 
 function duplicateNodeForClipboard(node: StoryNode): StoryNode {
-  return JSON.parse(JSON.stringify(node)) as StoryNode;
+  return deepCloneStoryValue(node);
 }
 
 export function createNodeSlice(set: EditorSet, _get: EditorGet) {

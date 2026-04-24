@@ -12,6 +12,7 @@ import type {
 
 export type HistoryEntry = {
   project: StoryProject;
+  revision: number;
 };
 
 export type NodePatch = {
@@ -31,7 +32,8 @@ export type EditorStore = {
   copiedNode: StoryNode | null;
   historyPast: HistoryEntry[];
   historyFuture: HistoryEntry[];
-  lastSavedSnapshot: string;
+  projectRevision: number;
+  savedRevision: number;
   newProject: () => void;
   loadExample: () => void;
   loadProject: (project: StoryProject, filePath?: string | null) => void;

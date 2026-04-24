@@ -27,12 +27,8 @@ export function isSameSelection(left: EditorSelection, right: EditorSelection): 
   return false;
 }
 
-export function snapshot(project: StoryProject): HistoryEntry {
-  return { project: duplicateProject(project) };
-}
-
-export function snapshotString(project: StoryProject): string {
-  return JSON.stringify(project);
+export function snapshot(project: StoryProject, revision: number): HistoryEntry {
+  return { project, revision };
 }
 
 export function syncStartTag(project: StoryProject, nodeId: string): StoryProject {
@@ -73,14 +69,15 @@ export function withProjectMutation(
   const nextBase = duplicateProject(state.project);
   const result = mutate(nextBase);
   const nextProject = result.project;
-  const nextSnapshot = snapshotString(nextProject);
+  const nextRevision = state.projectRevision + 1;
 
   return {
     project: nextProject,
+    projectRevision: nextRevision,
     selection: result.selection ?? state.selection,
-    historyPast: [...state.historyPast, snapshot(state.project)],
+    historyPast: [...state.historyPast, snapshot(state.project, state.projectRevision)],
     historyFuture: [],
-    dirty: nextSnapshot !== state.lastSavedSnapshot,
+    dirty: nextRevision !== state.savedRevision,
     lastError: null
   };
 }
@@ -99,7 +96,8 @@ export function resetState(
   | "copiedNode"
   | "historyPast"
   | "historyFuture"
-  | "lastSavedSnapshot"
+  | "projectRevision"
+  | "savedRevision"
 > {
   const cleanProject = duplicateProject(project);
   return {
@@ -112,6 +110,7 @@ export function resetState(
     copiedNode: null,
     historyPast: [],
     historyFuture: [],
-    lastSavedSnapshot: snapshotString(cleanProject)
+    projectRevision: 0,
+    savedRevision: 0
   };
 }

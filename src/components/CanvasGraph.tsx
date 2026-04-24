@@ -12,10 +12,10 @@ import ReactFlow, {
   type ReactFlowInstance
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { formatConditionSummary } from "../lib/conditions";
+import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
 import { getNodeMiniMapColor } from "../lib/nodeAppearance";
 import { useEditorStore } from "../store/editorStore";
-import type { StoryChoice, StoryNode, XYPosition } from "../types/story";
+import type { EditorSelection, StoryChoice, StoryGlobal, StoryNode, XYPosition } from "../types/story";
 import MiniMapNode from "./MiniMapNode";
 import StoryNodeCard, { type StoryNodeData } from "./StoryNodeCard";
 
@@ -75,6 +75,78 @@ function collectChoiceTargets(choice: StoryChoice): string[] {
     : branchTargets;
 }
 
+function getBodyPreview(body: string): string {
+  const excerpt = body.trim() || "Empty scene";
+  return excerpt.length > 180 ? `${excerpt.slice(0, 177)}...` : excerpt;
+}
+
+function buildChoiceRenderSignature(choice: StoryChoice, summary: string | null): string {
+  if (choice.route.mode === "direct") {
+    return [
+      choice.id,
+      choice.text,
+      summary ?? "",
+      choice.route.targetNodeId ?? "",
+      "direct"
+    ].join("::");
+  }
+
+  return [
+    choice.id,
+    choice.text,
+    summary ?? "",
+    choice.route.fallbackTargetNodeId ?? "",
+    choice.route.branches.length.toString(),
+    "conditional"
+  ].join("::");
+}
+
+function buildNodeData(
+  storyNode: StoryNode,
+  globalsById: Map<string, StoryGlobal>,
+  isSearchMatch: boolean
+): StoryNodeData {
+  const choiceRows = storyNode.choices.map((choice) => {
+    const summary = formatChoiceSummary(choice, globalsById);
+    return {
+      id: choice.id,
+      text: choice.text,
+      summary,
+      previewTargetNodeId:
+        choice.route.mode === "direct" ? choice.route.targetNodeId : choice.route.fallbackTargetNodeId,
+      isConnectable: choice.route.mode === "direct"
+    };
+  });
+  const layoutSignature = [
+    storyNode.title,
+    storyNode.body,
+    storyNode.tags.join("\u0001"),
+    choiceRows.map((choice) => `${choice.id}:${choice.text}:${choice.summary ?? ""}`).join("\u0002")
+  ].join("\u0000");
+  const renderSignature = [
+    layoutSignature,
+    storyNode.colorToken,
+    choiceRows.map((choice, index) => buildChoiceRenderSignature(storyNode.choices[index], choice.summary)).join("\u0002")
+  ].join("\u0000");
+
+  return {
+    nodeId: storyNode.id,
+    title: storyNode.title,
+    bodyPreview: getBodyPreview(storyNode.body),
+    tags: storyNode.tags,
+    colorToken: storyNode.colorToken,
+    choiceRows,
+    layoutSignature,
+    renderSignature,
+    isSearchMatch,
+    selectedChoiceId: null,
+    onNodeBodyClick: () => undefined,
+    onNodeBodyDoubleClick: () => undefined,
+    onChoiceClick: () => undefined,
+    onChoiceDoubleClick: () => undefined
+  };
+}
+
 function buildAdjacentNodeIds(nodes: StoryNode[], selectedNodeId: string | null): Set<string> {
   if (!selectedNodeId) {
     return new Set<string>();
@@ -83,20 +155,64 @@ function buildAdjacentNodeIds(nodes: StoryNode[], selectedNodeId: string | null)
   const adjacentNodeIds = new Set<string>();
 
   for (const storyNode of nodes) {
-    const targetNodeIds = storyNode.choices.flatMap(collectChoiceTargets);
-
     if (storyNode.id === selectedNodeId) {
-      targetNodeIds.forEach((targetNodeId) => adjacentNodeIds.add(targetNodeId));
+      for (const choice of storyNode.choices) {
+        for (const targetNodeId of collectChoiceTargets(choice)) {
+          adjacentNodeIds.add(targetNodeId);
+        }
+      }
       continue;
     }
 
-    if (targetNodeIds.includes(selectedNodeId)) {
-      adjacentNodeIds.add(storyNode.id);
+    for (const choice of storyNode.choices) {
+      if (collectChoiceTargets(choice).includes(selectedNodeId)) {
+        adjacentNodeIds.add(storyNode.id);
+        break;
+      }
     }
   }
 
   adjacentNodeIds.delete(selectedNodeId);
   return adjacentNodeIds;
+}
+
+function applySelectionToNodes(nodes: Node[], selection: EditorSelection): Node[] {
+  const selectedNodeId = selection?.type === "node" ? selection.nodeId : null;
+  const selectedChoiceNodeId = selection?.type === "choice" ? selection.nodeId : null;
+  const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
+
+  return nodes.map((node) => {
+    const nextSelected = node.id === selectedNodeId;
+    const nextSelectedChoiceId = node.id === selectedChoiceNodeId ? selectedChoiceId : null;
+
+    if (node.selected === nextSelected && node.data.selectedChoiceId === nextSelectedChoiceId) {
+      return node;
+    }
+
+    return {
+      ...node,
+      selected: nextSelected,
+      data: {
+        ...node.data,
+        selectedChoiceId: nextSelectedChoiceId
+      }
+    };
+  });
+}
+
+function applySelectionToEdges(edges: Edge[], selection: EditorSelection): Edge[] {
+  const selectedNodeId = selection?.type === "choice" ? selection.nodeId : null;
+  const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
+
+  return edges.map((edge) => {
+    const parsed = parseEdgeId(edge.id);
+    const nextSelected =
+      parsed !== null &&
+      parsed.nodeId === selectedNodeId &&
+      parsed.choiceId === selectedChoiceId;
+
+    return edge.selected === nextSelected ? edge : { ...edge, selected: nextSelected };
+  });
 }
 
 function getMiniMapNodeCategory(
@@ -139,6 +255,10 @@ export default function CanvasGraph({
   const moveNode = useEditorStore((state) => state.moveNode);
   const connectChoice = useEditorStore((state) => state.connectChoice);
   const selectedNodeId = selection?.type === "choice" ? selection.nodeId : selection?.nodeId ?? null;
+  const nodePositionsById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node.position])),
+    [nodes]
+  );
   const miniMapMode = useMemo(() => getMiniMapMode(nodes.length), [nodes.length]);
   const miniMapClassName = useMemo(
     () =>
@@ -151,10 +271,7 @@ export default function CanvasGraph({
     () => buildAdjacentNodeIds(nodes, selectedNodeId),
     [nodes, selectedNodeId]
   );
-  const globalsById = useMemo(
-    () => new Map(globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
-    [globals]
-  );
+  const globalsById = useMemo(() => new Map(globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])), [globals]);
   const handleNodeBodyClick = useCallback((nodeId: string) => {
     setSelection({ type: "node", nodeId });
   }, [setSelection]);
@@ -177,13 +294,9 @@ export default function CanvasGraph({
         id: storyNode.id,
         type: "storyNode",
         position: storyNode.position,
-        selected: selection?.type === "node" && selection.nodeId === storyNode.id,
+        selected: false,
         data: {
-          storyNode,
-          globalsById,
-          isSearchMatch: highlightedNodeIds.has(storyNode.id),
-          selectedChoiceId:
-            selection?.type === "choice" && selection.nodeId === storyNode.id ? selection.choiceId : null,
+          ...buildNodeData(storyNode, globalsById, highlightedNodeIds.has(storyNode.id)),
           onNodeBodyClick: handleNodeBodyClick,
           onNodeBodyDoubleClick: handleNodeBodyDoubleClick,
           onChoiceClick: handleChoiceClick,
@@ -197,8 +310,7 @@ export default function CanvasGraph({
       handleNodeBodyDoubleClick,
       globalsById,
       highlightedNodeIds,
-      nodes,
-      selection
+      nodes
     ]
   );
   const [canvasNodes, setCanvasNodes] = useState<Node[]>(projectNodes);
@@ -207,15 +319,15 @@ export default function CanvasGraph({
     setCanvasNodes(projectNodes);
   }, [projectNodes]);
 
-  const edges = useMemo<Edge[]>(
+  const selectedCanvasNodes = useMemo(
+    () => applySelectionToNodes(canvasNodes, selection),
+    [canvasNodes, selection]
+  );
+
+  const projectEdges = useMemo<Edge[]>(
     () =>
       nodes.flatMap((storyNode) =>
         storyNode.choices.flatMap((choice) => {
-          const selectedChoice =
-            selection?.type === "choice" &&
-            selection.nodeId === storyNode.id &&
-            selection.choiceId === choice.id;
-
           if (choice.route.mode === "direct") {
             return choice.route.targetNodeId
               ? [
@@ -224,7 +336,7 @@ export default function CanvasGraph({
                     source: storyNode.id,
                     sourceHandle: choice.id,
                     target: choice.route.targetNodeId,
-                    selected: selectedChoice,
+                    selected: false,
                     markerEnd: { type: MarkerType.ArrowClosed },
                     label: "",
                     style: { stroke: "#9f7655" },
@@ -241,7 +353,7 @@ export default function CanvasGraph({
               source: storyNode.id,
               sourceHandle: choice.id,
               target: branch.targetNodeId!,
-              selected: selectedChoice,
+              selected: false,
               markerEnd: { type: MarkerType.ArrowClosed },
               label: `${index === 0 ? "if" : "elif"} ${formatConditionSummary(branch.condition, globalsById)}`,
               style: { strokeDasharray: "6 4", stroke: "#8c7055" },
@@ -255,7 +367,7 @@ export default function CanvasGraph({
                   source: storyNode.id,
                   sourceHandle: choice.id,
                   target: choice.route.fallbackTargetNodeId,
-                  selected: selectedChoice,
+                  selected: false,
                   markerEnd: { type: MarkerType.ArrowClosed },
                   label: "else",
                   style: { stroke: "#b2723a" },
@@ -267,7 +379,11 @@ export default function CanvasGraph({
           return [...branchEdges, ...fallbackEdge];
         })
       ),
-    [globalsById, nodes, selection]
+    [globalsById, nodes]
+  );
+  const selectedEdges = useMemo(
+    () => applySelectionToEdges(projectEdges, selection),
+    [projectEdges, selection]
   );
 
   const fitGraph = useCallback(() => {
@@ -357,15 +473,15 @@ export default function CanvasGraph({
   }, [setSelection]);
 
   const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
-    const currentNode = nodes.find((n) => n.id === node.id);
+    const currentNodePosition = nodePositionsById.get(node.id);
     if (
-      !currentNode ||
-      (currentNode.position.x === node.position.x && currentNode.position.y === node.position.y)
+      !currentNodePosition ||
+      (currentNodePosition.x === node.position.x && currentNodePosition.y === node.position.y)
     ) {
       return;
     }
     moveNode(node.id, node.position);
-  }, [moveNode, nodes]);
+  }, [moveNode, nodePositionsById]);
 
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
@@ -399,7 +515,7 @@ export default function CanvasGraph({
       return "#ead7bd";
     }
 
-    return getNodeMiniMapColor(node.data.storyNode.colorToken);
+    return getNodeMiniMapColor(node.data.colorToken);
   }, [adjacentNodeIds, highlightedNodeIds, selectedNodeId]);
 
   const miniMapNodeStrokeColor = useCallback((node: Node) => {
@@ -460,8 +576,8 @@ export default function CanvasGraph({
   return (
     <div ref={canvasWrapperRef} className="canvas-graph">
       <ReactFlow
-        nodes={canvasNodes}
-        edges={edges}
+        nodes={selectedCanvasNodes}
+        edges={selectedEdges}
         nodeTypes={nodeTypes}
         fitView
         deleteKeyCode={null}

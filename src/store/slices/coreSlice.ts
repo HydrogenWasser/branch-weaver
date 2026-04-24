@@ -1,7 +1,7 @@
 import { createEmptyProject } from "../../lib/story";
 import { exampleProject } from "../../data/exampleProject";
 import type { EditorSelection, StoryProject, ViewportState } from "../../types/story";
-import { isSameSelection, resetState, snapshotString, withProjectMutation } from "../storeUtils";
+import { isSameSelection, resetState, withProjectMutation } from "../storeUtils";
 import type { EditorGet, EditorSet } from "../types";
 
 export function createCoreSlice(set: EditorSet, _get: EditorGet) {
@@ -26,7 +26,7 @@ export function createCoreSlice(set: EditorSet, _get: EditorGet) {
       set((state) => ({
         currentFilePath: filePath ?? state.currentFilePath,
         dirty: false,
-        lastSavedSnapshot: snapshotString(state.project),
+        savedRevision: state.projectRevision,
         lastError: null
       })),
     clearError: () => set({ lastError: null }),

@@ -19,6 +19,14 @@ import { normalizeNodeTag, sortNodeTags } from "./nodeTags";
 const DEFAULT_PROJECT_TITLE = "Untitled Story";
 const DEFAULT_NODE_COLOR: NodeColorToken = "sand";
 
+export function deepCloneStoryValue<T>(value: T): T {
+  if (typeof globalThis.structuredClone === "function") {
+    return globalThis.structuredClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function createId(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now().toString(36)}_${random}`;
@@ -79,7 +87,7 @@ export function cloneNodeAsNewNode(node: StoryNode, position: StoryNode["positio
       id: createId("choice"),
       effects: choice.effects.map((effect) => ({ ...effect })),
       visibilityCondition: choice.visibilityCondition
-        ? JSON.parse(JSON.stringify(choice.visibilityCondition))
+        ? deepCloneStoryValue(choice.visibilityCondition)
         : null,
       route:
         choice.route.mode === "direct"
@@ -90,7 +98,7 @@ export function cloneNodeAsNewNode(node: StoryNode, position: StoryNode["positio
           : {
               mode: "conditional",
               branches: choice.route.branches.map((branch) => ({
-                condition: JSON.parse(JSON.stringify(branch.condition)) as StoryCondition,
+                condition: deepCloneStoryValue(branch.condition) as StoryCondition,
                 targetNodeId: null
               })),
               fallbackTargetNodeId: null
@@ -120,7 +128,7 @@ export function createEmptyProject(): StoryProject {
 }
 
 export function duplicateProject(project: StoryProject): StoryProject {
-  return JSON.parse(JSON.stringify(project)) as StoryProject;
+  return deepCloneStoryValue(project);
 }
 
 function migrateChoice(

@@ -1,12 +1,25 @@
 import { memo, useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
-import { formatChoiceSummary } from "../lib/conditions";
 import { getNodeCardStyle } from "../lib/nodeAppearance";
-import type { StoryGlobal, StoryNode } from "../types/story";
+import type { NodeColorToken } from "../types/story";
+
+export type StoryNodeChoiceRow = {
+  id: string;
+  text: string;
+  summary: string | null;
+  previewTargetNodeId: string | null;
+  isConnectable: boolean;
+};
 
 export type StoryNodeData = {
-  storyNode: StoryNode;
-  globalsById: Map<string, StoryGlobal>;
+  nodeId: string;
+  title: string;
+  bodyPreview: string;
+  tags: string[];
+  colorToken: NodeColorToken;
+  choiceRows: StoryNodeChoiceRow[];
+  layoutSignature: string;
+  renderSignature: string;
   isSearchMatch: boolean;
   selectedChoiceId: string | null;
   onNodeBodyClick: (nodeId: string) => void;
@@ -17,20 +30,11 @@ export type StoryNodeData = {
 
 function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
   const updateNodeInternals = useUpdateNodeInternals();
-  const excerpt = data.storyNode.body.trim() || "Empty scene";
-  const preview = excerpt.length > 180 ? `${excerpt.slice(0, 177)}...` : excerpt;
-  const cardStyle = getNodeCardStyle(data.storyNode.colorToken);
+  const cardStyle = getNodeCardStyle(data.colorToken);
 
   useEffect(() => {
     updateNodeInternals(id);
-  }, [
-    data.storyNode.title,
-    data.storyNode.body,
-    data.storyNode.tags.length,
-    data.storyNode.choices.map((c) => c.text).join("|"),
-    id,
-    updateNodeInternals
-  ]);
+  }, [data.layoutSignature, id, updateNodeInternals]);
 
   return (
     <div
@@ -44,13 +48,13 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
       />
       <div
         className="story-node-card__body-section"
-        onClick={() => data.onNodeBodyClick(data.storyNode.id)}
-        onDoubleClick={() => data.onNodeBodyDoubleClick(data.storyNode.id)}
+        onClick={() => data.onNodeBodyClick(data.nodeId)}
+        onDoubleClick={() => data.onNodeBodyDoubleClick(data.nodeId)}
       >
         <div className="story-node-card__header">
-          {data.storyNode.tags.length > 0 ? (
+          {data.tags.length > 0 ? (
             <div className="story-node-card__tags">
-              {data.storyNode.tags.map((tag) => (
+              {data.tags.map((tag) => (
                 <span key={tag} className="story-node-card__tag">
                   {tag}
                 </span>
@@ -58,54 +62,49 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
             </div>
           ) : null}
           <div>
-            <strong>{data.storyNode.title || "Untitled Node"}</strong>
-            <p>{data.storyNode.id}</p>
+            <strong>{data.title || "Untitled Node"}</strong>
+            <p>{data.nodeId}</p>
           </div>
         </div>
-        <p className="story-node-card__body">{preview}</p>
+        <p className="story-node-card__body">{data.bodyPreview}</p>
       </div>
       <div className="story-node-card__choices">
-        {data.storyNode.choices.map((choice) => (
-          (() => {
-            const summary = formatChoiceSummary(choice, data.globalsById);
-            const previewTargetNodeId =
-              choice.route.mode === "direct"
-                ? choice.route.targetNodeId
-                : choice.route.fallbackTargetNodeId;
-
-            return (
-              <div
-                key={choice.id}
-                className={`story-node-card__choice nodrag nopan${
-                  data.selectedChoiceId === choice.id ? " is-selected" : ""
-                }`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  data.onChoiceClick(data.storyNode.id, choice.id);
-                }}
-                onDoubleClick={(event) => {
-                  event.stopPropagation();
-                  data.onChoiceDoubleClick(data.storyNode.id, choice.id, previewTargetNodeId);
-                }}
-              >
-                <div className="story-node-card__choice-content">
-                  <span>{choice.text || "Untitled choice"}</span>
-                  {summary ? <small>{summary}</small> : null}
-                </div>
-                <Handle
-                  id={choice.id}
-                  type="source"
-                  position={Position.Right}
-                  isConnectable={choice.route.mode === "direct"}
-                  className="story-node-card__handle story-node-card__handle--source"
-                />
-              </div>
-            );
-          })()
+        {data.choiceRows.map((choice) => (
+          <div
+            key={choice.id}
+            className={`story-node-card__choice nodrag nopan${
+              data.selectedChoiceId === choice.id ? " is-selected" : ""
+            }`}
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onChoiceClick(data.nodeId, choice.id);
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              data.onChoiceDoubleClick(data.nodeId, choice.id, choice.previewTargetNodeId);
+            }}
+          >
+            <div className="story-node-card__choice-content">
+              <span>{choice.text || "Untitled choice"}</span>
+              {choice.summary ? <small>{choice.summary}</small> : null}
+            </div>
+            <Handle
+              id={choice.id}
+              type="source"
+              position={Position.Right}
+              isConnectable={choice.isConnectable}
+              className="story-node-card__handle story-node-card__handle--source"
+            />
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-export default memo(StoryNodeCard);
+export default memo(StoryNodeCard, (prevProps, nextProps) =>
+  prevProps.selected === nextProps.selected &&
+  prevProps.data.isSearchMatch === nextProps.data.isSearchMatch &&
+  prevProps.data.selectedChoiceId === nextProps.data.selectedChoiceId &&
+  prevProps.data.renderSignature === nextProps.data.renderSignature
+);

@@ -20,6 +20,7 @@ import { useEditorStore } from "./store/editorStore";
 import type { StoryProject, XYPosition } from "./types/story";
 
 const EMPTY_HIGHLIGHT_SET = new Set<string>();
+const EMPTY_SEARCH_RESULTS: ReturnType<typeof searchNodeIndex> = [];
 const DEFAULT_NEW_NODE_POSITION = { x: 240, y: 240 };
 const DEFAULT_NEW_NODE_SIZE = { width: 260, height: 132 };
 const DEFAULT_SIDEBAR_ORDER = ["globals", "canvas", "story-map", "search", "export-checks"];
@@ -111,17 +112,21 @@ export default function App() {
   const projectTitle = project.metadata.title || "Untitled Story";
   const selectedNodeId = selection?.type === "choice" ? selection.nodeId : selection?.nodeId ?? null;
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const searchIndex = useMemo(() => buildNodeSearchIndex(nodes), [nodes]);
+  const trimmedSearchQuery = deferredSearchQuery.trim();
+  const searchIndex = useMemo(
+    () => (trimmedSearchQuery ? buildNodeSearchIndex(nodes) : null),
+    [nodes, trimmedSearchQuery]
+  );
   const searchResults = useMemo(
-    () => searchNodeIndex(searchIndex, deferredSearchQuery),
-    [deferredSearchQuery, searchIndex]
+    () => (searchIndex ? searchNodeIndex(searchIndex, trimmedSearchQuery) : EMPTY_SEARCH_RESULTS),
+    [searchIndex, trimmedSearchQuery]
   );
   const highlightedNodeIds = useMemo(
     () =>
-      deferredSearchQuery.trim()
+      trimmedSearchQuery
         ? new Set(searchResults.map((result) => result.nodeId))
         : EMPTY_HIGHLIGHT_SET,
-    [deferredSearchQuery, searchResults]
+    [searchResults, trimmedSearchQuery]
   );
 
   const handleFitReady = useCallback((fit: () => void) => {
@@ -276,7 +281,7 @@ export default function App() {
       return;
     }
 
-    const selectedNode = project.nodes.find((node) => node.id === selection.nodeId);
+    const selectedNode = nodes.find((node) => node.id === selection.nodeId);
     const nextChoiceId =
       selectedNode?.choices.some((choice) => choice.id === choicesDrawerChoiceId)
         ? choicesDrawerChoiceId
@@ -284,7 +289,7 @@ export default function App() {
 
     setChoicesDrawerNodeId(selection.nodeId);
     setChoicesDrawerChoiceId(nextChoiceId);
-  }, [choicesDrawerChoiceId, choicesDrawerOpen, project.nodes, selection]);
+  }, [choicesDrawerChoiceId, choicesDrawerOpen, nodes, selection]);
 
   const renderSidebarPanel = (panelId: string) => {
     switch (panelId) {
@@ -319,7 +324,7 @@ export default function App() {
           <SearchPanel
             query={searchQuery}
             resultCount={searchResults.length}
-            totalCount={project.nodes.length}
+            totalCount={nodes.length}
             results={searchResults}
             onQueryChange={setSearchQuery}
             onSelectNode={focusNode}
@@ -328,7 +333,7 @@ export default function App() {
       case "story-map":
         return (
           <MapSummaryPanel
-            nodes={project.nodes}
+            nodes={nodes}
             selectedNodeId={selectedNodeId}
             onOpenMap={handleOpenStoryMap}
             onFocusNode={focusNode}
@@ -358,7 +363,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <TopBar
-        projectTitle={project.metadata.title}
+        projectTitle={projectTitle}
         dirty={dirty}
         onProjectTitleChange={updateProjectTitle}
         onNew={handleCreateProject}
@@ -432,7 +437,7 @@ export default function App() {
           {storyMapOpen ? (
             <StoryMapDrawer
               open={storyMapOpen}
-              nodes={project.nodes}
+              nodes={nodes}
               selectedNodeId={selectedNodeId}
               initialGroupName={storyMapGroupName}
               onClose={() => setStoryMapOpen(false)}

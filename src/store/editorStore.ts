@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { exampleProject } from "../data/exampleProject";
-import { duplicateProject, getChoiceBySelection } from "../lib/story";
+import { getChoiceBySelection } from "../lib/story";
 import { createChoiceSlice } from "./slices/choiceSlice";
 import { createCoreSlice } from "./slices/coreSlice";
 import { createGlobalSlice } from "./slices/globalSlice";
@@ -9,7 +9,7 @@ import { createNodeSlice } from "./slices/nodeSlice";
 import { resetState } from "./storeUtils";
 import type { EditorStore } from "./types";
 
-const initialProject = duplicateProject(exampleProject);
+const initialProject = exampleProject;
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
   ...resetState(initialProject),

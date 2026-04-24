@@ -1,5 +1,5 @@
 import { duplicateProject, exportValidationErrors, fileNameFromTitle, getChoiceBySelection } from "../../lib/story";
-import { snapshot, snapshotString } from "../storeUtils";
+import { snapshot } from "../storeUtils";
 import type { EditorGet, EditorSet } from "../types";
 
 export function createHistorySlice(set: EditorSet, get: EditorGet) {
@@ -32,9 +32,10 @@ export function createHistorySlice(set: EditorSet, get: EditorGet) {
 
         return {
           project: duplicateProject(previous.project),
+          projectRevision: previous.revision,
           historyPast: state.historyPast.slice(0, -1),
-          historyFuture: [snapshot(state.project), ...state.historyFuture],
-          dirty: snapshotString(previous.project) !== state.lastSavedSnapshot,
+          historyFuture: [snapshot(state.project, state.projectRevision), ...state.historyFuture],
+          dirty: previous.revision !== state.savedRevision,
           selection: { type: "node", nodeId: previous.project.metadata.startNodeId },
           lastError: null
         };
@@ -48,9 +49,10 @@ export function createHistorySlice(set: EditorSet, get: EditorGet) {
 
         return {
           project: duplicateProject(next.project),
-          historyPast: [...state.historyPast, snapshot(state.project)],
+          projectRevision: next.revision,
+          historyPast: [...state.historyPast, snapshot(state.project, state.projectRevision)],
           historyFuture: state.historyFuture.slice(1),
-          dirty: snapshotString(next.project) !== state.lastSavedSnapshot,
+          dirty: next.revision !== state.savedRevision,
           selection: { type: "node", nodeId: next.project.metadata.startNodeId },
           lastError: null
         };
