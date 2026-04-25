@@ -42,9 +42,10 @@ export default function MapSummaryPanel({
   const groups = useMemo(() => buildStoryMapGroups(nodes), [nodes]);
   const summaryGroups = useMemo(() => getSummaryGroups(groups), [groups]);
   const hiddenGroupCount = Math.max(groups.length - summaryGroups.length, 0);
+  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const selectedNode = useMemo(
-    () => (selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null),
-    [nodes, selectedNodeId]
+    () => (selectedNodeId ? nodeById.get(selectedNodeId) ?? null : null),
+    [nodeById, selectedNodeId]
   );
 
   return (

@@ -1,6 +1,7 @@
 import { memo, useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
 import { getNodeCardStyle } from "../lib/nodeAppearance";
+import { useEditorStore } from "../store/editorStore";
 import type { NodeColorToken } from "../types/story";
 
 export type StoryNodeChoiceRow = {
@@ -21,7 +22,6 @@ export type StoryNodeData = {
   layoutSignature: string;
   renderSignature: string;
   isSearchMatch: boolean;
-  selectedChoiceId: string | null;
   onNodeBodyClick: (nodeId: string) => void;
   onNodeBodyDoubleClick: (nodeId: string) => void;
   onChoiceClick: (nodeId: string, choiceId: string) => void;
@@ -31,6 +31,19 @@ export type StoryNodeData = {
 function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
   const updateNodeInternals = useUpdateNodeInternals();
   const cardStyle = getNodeCardStyle(data.colorToken);
+  const selectionMarker = useEditorStore((state) => {
+    if (state.selection?.type === "node" && state.selection.nodeId === data.nodeId) {
+      return "__node__";
+    }
+
+    if (state.selection?.type === "choice" && state.selection.nodeId === data.nodeId) {
+      return state.selection.choiceId;
+    }
+
+    return null;
+  });
+  const isSelected = selected || selectionMarker !== null;
+  const selectedChoiceId = selectionMarker === "__node__" ? null : selectionMarker;
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -38,7 +51,7 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
 
   return (
     <div
-      className={`story-node-card${selected ? " is-selected" : ""}${data.isSearchMatch ? " is-match" : ""}`}
+      className={`story-node-card${isSelected ? " is-selected" : ""}${data.isSearchMatch ? " is-match" : ""}`}
       style={cardStyle}
     >
       <Handle
@@ -73,7 +86,7 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
           <div
             key={choice.id}
             className={`story-node-card__choice nodrag nopan${
-              data.selectedChoiceId === choice.id ? " is-selected" : ""
+              selectedChoiceId === choice.id ? " is-selected" : ""
             }`}
             onClick={(event) => {
               event.stopPropagation();
@@ -105,6 +118,5 @@ function StoryNodeCard({ data, selected, id }: NodeProps<StoryNodeData>) {
 export default memo(StoryNodeCard, (prevProps, nextProps) =>
   prevProps.selected === nextProps.selected &&
   prevProps.data.isSearchMatch === nextProps.data.isSearchMatch &&
-  prevProps.data.selectedChoiceId === nextProps.data.selectedChoiceId &&
   prevProps.data.renderSignature === nextProps.data.renderSignature
 );

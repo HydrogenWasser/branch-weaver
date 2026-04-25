@@ -3,7 +3,7 @@ import { replaceRouteTargetNodeId } from "../../lib/conditions";
 import { normalizeNodeTag, sortNodeTags } from "../../lib/nodeTags";
 import type { StoryNode } from "../../types/story";
 import type { NodeColorToken, XYPosition } from "../../types/story";
-import { syncStartTag, withProjectMutation } from "../storeUtils";
+import { snapshot, syncStartTag, withProjectMutation } from "../storeUtils";
 import type { EditorGet, EditorSet, NodePatch } from "../types";
 
 function duplicateNodeForClipboard(node: StoryNode): StoryNode {
@@ -96,17 +96,40 @@ export function createNodeSlice(set: EditorSet, _get: EditorGet) {
         })
       ),
     moveNode: (nodeId: string, position: XYPosition) =>
-      set((state) =>
-        withProjectMutation(state, (project) => {
-          project.nodes = project.nodes.map((node) =>
-            node.id === nodeId ? { ...node, position } : node
-          );
+      set((state) => {
+        const nodeIndex = state.project.nodes.findIndex((node) => node.id === nodeId);
+        if (nodeIndex < 0) {
+          return state;
+        }
+
+        const currentNode = state.project.nodes[nodeIndex];
+        if (currentNode.position.x === position.x && currentNode.position.y === position.y) {
           return {
-            project,
-            selection: { type: "node", nodeId }
+            selection: { type: "node", nodeId },
+            lastError: null
           };
-        })
-      ),
+        }
+
+        const nextNodes = [...state.project.nodes];
+        nextNodes[nodeIndex] = {
+          ...currentNode,
+          position
+        };
+
+        const nextRevision = state.projectRevision + 1;
+        return {
+          project: {
+            ...state.project,
+            nodes: nextNodes
+          },
+          projectRevision: nextRevision,
+          selection: { type: "node", nodeId },
+          historyPast: [...state.historyPast, snapshot(state.project, state.projectRevision)],
+          historyFuture: [],
+          dirty: nextRevision !== state.savedRevision,
+          lastError: null
+        };
+      }),
     applyNodeLayout: (positions: Record<string, XYPosition>) =>
       set((state) => {
         const hasChanges = state.project.nodes.some((node) => {

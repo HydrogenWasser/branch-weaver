@@ -1,19 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
+  applyNodeChanges,
   Background,
   MarkerType,
-  MiniMap,
   type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type ReactFlowInstance
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
-import { getNodeMiniMapColor } from "../lib/nodeAppearance";
 import { useEditorStore } from "../store/editorStore";
-import type { EditorSelection, StoryChoice, StoryGlobal, StoryNode, XYPosition } from "../types/story";
-import MiniMapNode from "./MiniMapNode";
+import type { StoryChoice, StoryGlobal, StoryNode, XYPosition } from "../types/story";
 import StoryNodeCard, { type StoryNodeData } from "./StoryNodeCard";
 
 type CanvasGraphProps = {
@@ -31,12 +30,6 @@ const nodeTypes = {
   storyNode: StoryNodeCard
 };
 
-const MINIMAP_DENSE_THRESHOLD = 60;
-const MINIMAP_OVERLOADED_THRESHOLD = 120;
-
-type MiniMapMode = "normal" | "dense" | "overloaded";
-type MiniMapNodeCategory = "selected" | "search" | "adjacent" | "normal";
-
 function buildEdgeId(nodeId: string, choiceId: string, variant = "direct"): string {
   return `${nodeId}::${choiceId}::${variant}`;
 }
@@ -44,32 +37,6 @@ function buildEdgeId(nodeId: string, choiceId: string, variant = "direct"): stri
 function parseEdgeId(edgeId: string): { nodeId: string; choiceId: string } | null {
   const [nodeId, choiceId] = edgeId.split("::");
   return nodeId && choiceId ? { nodeId, choiceId } : null;
-}
-
-function getMiniMapMode(nodeCount: number): MiniMapMode {
-  if (nodeCount > MINIMAP_OVERLOADED_THRESHOLD) {
-    return "overloaded";
-  }
-
-  if (nodeCount > MINIMAP_DENSE_THRESHOLD) {
-    return "dense";
-  }
-
-  return "normal";
-}
-
-function collectChoiceTargets(choice: StoryChoice): string[] {
-  if (choice.route.mode === "direct") {
-    return choice.route.targetNodeId ? [choice.route.targetNodeId] : [];
-  }
-
-  const branchTargets = choice.route.branches.flatMap((branch) =>
-    branch.targetNodeId ? [branch.targetNodeId] : []
-  );
-
-  return choice.route.fallbackTargetNodeId
-    ? [...branchTargets, choice.route.fallbackTargetNodeId]
-    : branchTargets;
 }
 
 function getBodyPreview(body: string): string {
@@ -136,7 +103,6 @@ function buildNodeData(
     layoutSignature,
     renderSignature,
     isSearchMatch,
-    selectedChoiceId: null,
     onNodeBodyClick: () => undefined,
     onNodeBodyDoubleClick: () => undefined,
     onChoiceClick: () => undefined,
@@ -144,134 +110,40 @@ function buildNodeData(
   };
 }
 
-function buildAdjacentNodeIds(nodes: StoryNode[], selectedNodeId: string | null): Set<string> {
-  if (!selectedNodeId) {
-    return new Set<string>();
-  }
-
-  const adjacentNodeIds = new Set<string>();
-
-  for (const storyNode of nodes) {
-    if (storyNode.id === selectedNodeId) {
-      for (const choice of storyNode.choices) {
-        for (const targetNodeId of collectChoiceTargets(choice)) {
-          adjacentNodeIds.add(targetNodeId);
-        }
-      }
-      continue;
-    }
-
-    for (const choice of storyNode.choices) {
-      if (collectChoiceTargets(choice).includes(selectedNodeId)) {
-        adjacentNodeIds.add(storyNode.id);
-        break;
-      }
-    }
-  }
-
-  adjacentNodeIds.delete(selectedNodeId);
-  return adjacentNodeIds;
+function samePosition(left: XYPosition, right: XYPosition): boolean {
+  return left.x === right.x && left.y === right.y;
 }
 
-function applySelectionToNodes(nodes: Node[], selection: EditorSelection): Node[] {
-  const selectedNodeId = selection?.type === "node" ? selection.nodeId : null;
-  const selectedChoiceNodeId = selection?.type === "choice" ? selection.nodeId : null;
-  const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
-  let hasChanges = false;
+function syncFlowNodes(currentNodes: Node[], projectNodes: Node[]): Node[] {
+  const currentById = new Map(currentNodes.map((node) => [node.id, node]));
+  let hasChanges = currentNodes.length !== projectNodes.length;
 
-  const nextNodes = nodes.map((node) => {
-    const nextSelected = node.id === selectedNodeId;
-    const nextSelectedChoiceId = node.id === selectedChoiceNodeId ? selectedChoiceId : null;
-
-    if (node.selected === nextSelected && node.data.selectedChoiceId === nextSelectedChoiceId) {
-      return node;
+  const nextNodes = projectNodes.map((projectNode) => {
+    const currentNode = currentById.get(projectNode.id);
+    if (!currentNode) {
+      hasChanges = true;
+      return projectNode;
     }
 
-    hasChanges = true;
-    return {
-      ...node,
-      selected: nextSelected,
-      data: {
-        ...node.data,
-        selectedChoiceId: nextSelectedChoiceId
-      }
-    };
-  });
-
-  return hasChanges ? nextNodes : nodes;
-}
-
-function applyDragPreviewToNodes(
-  nodes: Node[],
-  dragPreviewPositions: Record<string, XYPosition>
-): Node[] {
-  const previewIds = Object.keys(dragPreviewPositions);
-  if (previewIds.length === 0) {
-    return nodes;
-  }
-
-  let hasChanges = false;
-  const nextNodes = nodes.map((node) => {
-    const previewPosition = dragPreviewPositions[node.id];
     if (
-      !previewPosition ||
-      (node.position.x === previewPosition.x && node.position.y === previewPosition.y)
+      currentNode.type === projectNode.type &&
+      currentNode.data === projectNode.data &&
+      samePosition(currentNode.position, projectNode.position)
     ) {
-      return node;
+      return currentNode;
     }
 
     hasChanges = true;
     return {
-      ...node,
-      position: previewPosition
+      ...currentNode,
+      ...projectNode,
+      position: projectNode.position,
+      data: projectNode.data,
+      selected: false
     };
   });
 
-  return hasChanges ? nextNodes : nodes;
-}
-
-function applySelectionToEdges(edges: Edge[], selection: EditorSelection): Edge[] {
-  const selectedNodeId = selection?.type === "choice" ? selection.nodeId : null;
-  const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
-  let hasChanges = false;
-
-  const nextEdges = edges.map((edge) => {
-    const parsed = parseEdgeId(edge.id);
-    const nextSelected =
-      parsed !== null &&
-      parsed.nodeId === selectedNodeId &&
-      parsed.choiceId === selectedChoiceId;
-
-    if (edge.selected === nextSelected) {
-      return edge;
-    }
-
-    hasChanges = true;
-    return { ...edge, selected: nextSelected };
-  });
-
-  return hasChanges ? nextEdges : edges;
-}
-
-function getMiniMapNodeCategory(
-  nodeId: string,
-  selectedNodeId: string | null,
-  highlightedNodeIds: Set<string>,
-  adjacentNodeIds: Set<string>
-): MiniMapNodeCategory {
-  if (nodeId === selectedNodeId) {
-    return "selected";
-  }
-
-  if (highlightedNodeIds.has(nodeId)) {
-    return "search";
-  }
-
-  if (adjacentNodeIds.has(nodeId)) {
-    return "adjacent";
-  }
-
-  return "normal";
+  return hasChanges ? nextNodes : currentNodes;
 }
 
 export default function CanvasGraph({
@@ -286,29 +158,17 @@ export default function CanvasGraph({
 }: CanvasGraphProps) {
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
-  const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, XYPosition>>({});
+  const isDraggingRef = useRef(false);
+  const pendingNodeChangesRef = useRef<NodeChange[]>([]);
+  const nodeChangeFrameRef = useRef<number | null>(null);
   const nodes = useEditorStore((state) => state.project.nodes);
   const globals = useEditorStore((state) => state.project.globals);
-  const selection = useEditorStore((state) => state.selection);
   const setSelection = useEditorStore((state) => state.setSelection);
   const moveNode = useEditorStore((state) => state.moveNode);
   const connectChoice = useEditorStore((state) => state.connectChoice);
-  const selectedNodeId = selection?.type === "choice" ? selection.nodeId : selection?.nodeId ?? null;
   const nodePositionsById = useMemo(
     () => new Map(nodes.map((node) => [node.id, node.position])),
     [nodes]
-  );
-  const miniMapMode = useMemo(() => getMiniMapMode(nodes.length), [nodes.length]);
-  const miniMapClassName = useMemo(
-    () =>
-      `story-minimap${miniMapMode === "overloaded" ? " story-minimap--overview-only" : ""}${
-        miniMapMode === "dense" ? " story-minimap--dense" : ""
-      }`,
-    [miniMapMode]
-  );
-  const adjacentNodeIds = useMemo(
-    () => buildAdjacentNodeIds(nodes, selectedNodeId),
-    [nodes, selectedNodeId]
   );
   const globalsById = useMemo(() => new Map(globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])), [globals]);
   const handleNodeBodyClick = useCallback((nodeId: string) => {
@@ -352,13 +212,23 @@ export default function CanvasGraph({
       nodes
     ]
   );
-  const dragPreviewNodes = useMemo(
-    () => applyDragPreviewToNodes(projectNodes, dragPreviewPositions),
-    [dragPreviewPositions, projectNodes]
-  );
-  const selectedCanvasNodes = useMemo(
-    () => applySelectionToNodes(dragPreviewNodes, selection),
-    [dragPreviewNodes, selection]
+  const [flowNodes, setFlowNodes] = useState<Node[]>(() => projectNodes);
+
+  useEffect(() => {
+    if (isDraggingRef.current) {
+      return;
+    }
+
+    setFlowNodes((currentNodes) => syncFlowNodes(currentNodes, projectNodes));
+  }, [projectNodes]);
+
+  useEffect(
+    () => () => {
+      if (nodeChangeFrameRef.current !== null) {
+        window.cancelAnimationFrame(nodeChangeFrameRef.current);
+      }
+    },
+    []
   );
 
   const projectEdges = useMemo<Edge[]>(
@@ -417,10 +287,6 @@ export default function CanvasGraph({
         })
       ),
     [globalsById, nodes]
-  );
-  const selectedEdges = useMemo(
-    () => applySelectionToEdges(projectEdges, selection),
-    [projectEdges, selection]
   );
 
   const fitGraph = useCallback(() => {
@@ -491,33 +357,28 @@ export default function CanvasGraph({
     setSelection(null);
   }, [setSelection]);
 
-  const handleNodeDrag = useCallback((_: unknown, node: Node) => {
-    setDragPreviewPositions((current) => {
-      const existing = current[node.id];
-      if (existing && existing.x === node.position.x && existing.y === node.position.y) {
-        return current;
-      }
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    pendingNodeChangesRef.current.push(...changes);
 
-      return {
-        ...current,
-        [node.id]: {
-          x: node.position.x,
-          y: node.position.y
-        }
-      };
+    if (nodeChangeFrameRef.current !== null) {
+      return;
+    }
+
+    nodeChangeFrameRef.current = window.requestAnimationFrame(() => {
+      const pendingChanges = pendingNodeChangesRef.current;
+      pendingNodeChangesRef.current = [];
+      nodeChangeFrameRef.current = null;
+      setFlowNodes((currentNodes) => applyNodeChanges(pendingChanges, currentNodes));
     });
   }, []);
 
-  const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
-    setDragPreviewPositions((current) => {
-      if (!(node.id in current)) {
-        return current;
-      }
+  const handleNodeDragStart = useCallback((_: unknown, node: Node) => {
+    isDraggingRef.current = true;
+    setSelection({ type: "node", nodeId: node.id });
+  }, [setSelection]);
 
-      const next = { ...current };
-      delete next[node.id];
-      return next;
-    });
+  const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
+    isDraggingRef.current = false;
 
     const currentNodePosition = nodePositionsById.get(node.id);
     if (
@@ -528,19 +389,6 @@ export default function CanvasGraph({
     }
     moveNode(node.id, node.position);
   }, [moveNode, nodePositionsById]);
-
-  useEffect(() => {
-    setDragPreviewPositions((current) => {
-      const activeNodeIds = new Set(nodes.map((node) => node.id));
-      const nextEntries = Object.entries(current).filter(([nodeId]) => activeNodeIds.has(nodeId));
-
-      if (nextEntries.length === Object.keys(current).length) {
-        return current;
-      }
-
-      return Object.fromEntries(nextEntries);
-    });
-  }, [nodes]);
 
   const handleEdgeClick = useCallback((_: unknown, edge: Edge) => {
     const parsed = parseEdgeId(edge.id);
@@ -555,93 +403,21 @@ export default function CanvasGraph({
     }
   }, [onRequestFocusNode]);
 
-  const miniMapNodeColor = useCallback((node: Node) => {
-    const category = getMiniMapNodeCategory(node.id, selectedNodeId, highlightedNodeIds, adjacentNodeIds);
-
-    if (category === "selected") {
-      return "#f4d2ad";
-    }
-
-    if (category === "search") {
-      return "#d68e3f";
-    }
-
-    if (category === "adjacent") {
-      return "#ead7bd";
-    }
-
-    return getNodeMiniMapColor(node.data.colorToken);
-  }, [adjacentNodeIds, highlightedNodeIds, selectedNodeId]);
-
-  const miniMapNodeStrokeColor = useCallback((node: Node) => {
-    const category = getMiniMapNodeCategory(node.id, selectedNodeId, highlightedNodeIds, adjacentNodeIds);
-
-    if (category === "selected") {
-      return "#7b4520";
-    }
-
-    if (category === "search") {
-      return "#b5641f";
-    }
-
-    if (category === "adjacent") {
-      return "#8b6d50";
-    }
-
-    if (miniMapMode === "normal") {
-      return "rgba(106, 77, 51, 0.34)";
-    }
-
-    if (miniMapMode === "dense") {
-      return "rgba(106, 77, 51, 0.14)";
-    }
-
-    return "rgba(106, 77, 51, 0.1)";
-  }, [adjacentNodeIds, highlightedNodeIds, miniMapMode, selectedNodeId]);
-
-  const miniMapNodeClassName = useCallback((node: Node) => {
-    const category = getMiniMapNodeCategory(node.id, selectedNodeId, highlightedNodeIds, adjacentNodeIds);
-    const classNames = [
-      "story-minimap__node",
-      `story-minimap__node--${miniMapMode}`,
-      `story-minimap__node--${category}`
-    ];
-
-    if (miniMapMode === "dense" && category === "normal") {
-      classNames.push("story-minimap__node--muted");
-    }
-
-    if (miniMapMode === "overloaded" && category === "normal") {
-      classNames.push("story-minimap__node--dot");
-    }
-
-    return classNames.join(" ");
-  }, [adjacentNodeIds, highlightedNodeIds, miniMapMode, selectedNodeId]);
-
-  const handleMiniMapClick = useCallback((event: MouseEvent, position: XYPosition) => {
-    event.stopPropagation();
-    reactFlowRef.current?.setCenter(position.x, position.y, { duration: 220 });
-  }, []);
-
-  const handleMiniMapNodeClick = useCallback((event: MouseEvent, node: Node) => {
-    event.stopPropagation();
-    onRequestFocusNode(node.id);
-  }, [onRequestFocusNode]);
-
   return (
     <div ref={canvasWrapperRef} className="canvas-graph">
       <ReactFlow
-        nodes={selectedCanvasNodes}
-        edges={selectedEdges}
+        nodes={flowNodes}
+        edges={projectEdges}
         nodeTypes={nodeTypes}
         fitView
         deleteKeyCode={null}
         multiSelectionKeyCode={["Control", "Meta"]}
         elementsSelectable={false}
         onInit={handleInit}
+        onNodesChange={handleNodesChange}
         onConnect={handleConnect}
         onPaneClick={handlePaneClick}
-        onNodeDrag={handleNodeDrag}
+        onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
         onEdgeClick={handleEdgeClick}
         onEdgeDoubleClick={handleEdgeDoubleClick}
@@ -651,23 +427,6 @@ export default function CanvasGraph({
         maxZoom={1.75}
       >
         <Background color="#d7d4cd" gap={24} size={1.2} />
-        <MiniMap
-          pannable
-          zoomable={miniMapMode !== "overloaded"}
-          nodeColor={miniMapNodeColor}
-          nodeStrokeColor={miniMapNodeStrokeColor}
-          nodeClassName={miniMapNodeClassName}
-          nodeComponent={MiniMapNode}
-          nodeBorderRadius={4}
-          nodeStrokeWidth={1.4}
-          maskColor="rgba(245, 239, 231, 0.62)"
-          maskStrokeColor="rgba(121, 82, 47, 0.72)"
-          maskStrokeWidth={2}
-          onClick={handleMiniMapClick}
-          onNodeClick={handleMiniMapNodeClick}
-          ariaLabel="Canvas minimap navigator"
-          className={miniMapClassName}
-        />
       </ReactFlow>
     </div>
   );

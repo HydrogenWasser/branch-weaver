@@ -4,6 +4,7 @@ import FileTriggersEditor from "./FileTriggersEditor";
 import { formatChoiceSummary, formatConditionSummary } from "../lib/conditions";
 import { NODE_COLOR_THEMES, TAG_SUGGESTIONS } from "../lib/nodeAppearance";
 import { useEditorStore } from "../store/editorStore";
+import type { StoryChoice, StoryNode } from "../types/story";
 
 const DEFAULT_INSPECTOR_ORDER = ["node", "tags", "file-triggers", "node-color", "choices", "selected-connection"];
 
@@ -13,8 +14,8 @@ type InspectorProps = {
 };
 
 export default function Inspector({ onCollapse, onOpenChoicesEditor }: InspectorProps) {
-  const project = useEditorStore((state) => state.project);
   const selection = useEditorStore((state) => state.selection);
+  const globals = useEditorStore((state) => state.project.globals);
   const updateNode = useEditorStore((state) => state.updateNode);
   const addNodeTag = useEditorStore((state) => state.addNodeTag);
   const removeNodeTag = useEditorStore((state) => state.removeNodeTag);
@@ -35,22 +36,29 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
       return DEFAULT_INSPECTOR_ORDER;
     }
   });
+  const selectedNodeId =
+    selection?.type === "node" ? selection.nodeId : selection?.type === "choice" ? selection.nodeId : null;
+  const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
   const globalsById = useMemo(
-    () => new Map(project.globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
-    [project.globals]
+    () => new Map(globals.map((storyGlobal) => [storyGlobal.id, storyGlobal])),
+    [globals]
   );
-
-  const selectedNode =
-    selection?.type === "node"
-      ? project.nodes.find((node) => node.id === selection.nodeId)
-      : selection?.type === "choice"
-        ? project.nodes.find((node) => node.id === selection.nodeId)
-        : null;
-
-  const selectedChoice =
-    selection?.type === "choice"
-      ? selectedNode?.choices.find((choice) => choice.id === selection.choiceId) ?? null
-      : null;
+  const selectedNode = useEditorStore(
+    useCallback(
+      (state): StoryNode | null =>
+        selectedNodeId
+          ? state.project.nodes.find((node) => node.id === selectedNodeId) ?? null
+          : null,
+      [selectedNodeId]
+    )
+  );
+  const selectedChoice = useMemo<StoryChoice | null>(
+    () =>
+      selectedChoiceId
+        ? selectedNode?.choices.find((choice) => choice.id === selectedChoiceId) ?? null
+        : null,
+    [selectedChoiceId, selectedNode]
+  );
 
   const suggestedTags = useMemo(
     () => TAG_SUGGESTIONS.filter((tag) => !selectedNode?.tags.includes(tag)),
@@ -70,13 +78,13 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
         return;
       }
 
-      const node = project.nodes.find((projectNode) => projectNode.id === nodeId);
+      const node = useEditorStore.getState().project.nodes.find((projectNode) => projectNode.id === nodeId);
       if (node && draftTitle !== node.title) {
         updateNode(nodeId, { title: draftTitle });
       }
       titleEditNodeIdRef.current = null;
     },
-    [draftTitle, project.nodes, updateNode]
+    [draftTitle, updateNode]
   );
 
   const commitBody = useCallback(
@@ -85,13 +93,13 @@ export default function Inspector({ onCollapse, onOpenChoicesEditor }: Inspector
         return;
       }
 
-      const node = project.nodes.find((projectNode) => projectNode.id === nodeId);
+      const node = useEditorStore.getState().project.nodes.find((projectNode) => projectNode.id === nodeId);
       if (node && draftBody !== node.body) {
         updateNode(nodeId, { body: draftBody });
       }
       bodyEditNodeIdRef.current = null;
     },
-    [draftBody, project.nodes, updateNode]
+    [draftBody, updateNode]
   );
 
   const handleAddTag = (tag: string) => {
