@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import ReactFlow, {
-  applyNodeChanges,
   Background,
   MarkerType,
   MiniMap,
   type Connection,
   type Edge,
   type Node,
-  type NodeChange,
-  type OnSelectionChangeParams,
   type ReactFlowInstance
 } from "reactflow";
 import "reactflow/dist/style.css";
@@ -180,8 +177,9 @@ function applySelectionToNodes(nodes: Node[], selection: EditorSelection): Node[
   const selectedNodeId = selection?.type === "node" ? selection.nodeId : null;
   const selectedChoiceNodeId = selection?.type === "choice" ? selection.nodeId : null;
   const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
+  let hasChanges = false;
 
-  return nodes.map((node) => {
+  const nextNodes = nodes.map((node) => {
     const nextSelected = node.id === selectedNodeId;
     const nextSelectedChoiceId = node.id === selectedChoiceNodeId ? selectedChoiceId : null;
 
@@ -189,6 +187,7 @@ function applySelectionToNodes(nodes: Node[], selection: EditorSelection): Node[
       return node;
     }
 
+    hasChanges = true;
     return {
       ...node,
       selected: nextSelected,
@@ -198,21 +197,60 @@ function applySelectionToNodes(nodes: Node[], selection: EditorSelection): Node[
       }
     };
   });
+
+  return hasChanges ? nextNodes : nodes;
+}
+
+function applyDragPreviewToNodes(
+  nodes: Node[],
+  dragPreviewPositions: Record<string, XYPosition>
+): Node[] {
+  const previewIds = Object.keys(dragPreviewPositions);
+  if (previewIds.length === 0) {
+    return nodes;
+  }
+
+  let hasChanges = false;
+  const nextNodes = nodes.map((node) => {
+    const previewPosition = dragPreviewPositions[node.id];
+    if (
+      !previewPosition ||
+      (node.position.x === previewPosition.x && node.position.y === previewPosition.y)
+    ) {
+      return node;
+    }
+
+    hasChanges = true;
+    return {
+      ...node,
+      position: previewPosition
+    };
+  });
+
+  return hasChanges ? nextNodes : nodes;
 }
 
 function applySelectionToEdges(edges: Edge[], selection: EditorSelection): Edge[] {
   const selectedNodeId = selection?.type === "choice" ? selection.nodeId : null;
   const selectedChoiceId = selection?.type === "choice" ? selection.choiceId : null;
+  let hasChanges = false;
 
-  return edges.map((edge) => {
+  const nextEdges = edges.map((edge) => {
     const parsed = parseEdgeId(edge.id);
     const nextSelected =
       parsed !== null &&
       parsed.nodeId === selectedNodeId &&
       parsed.choiceId === selectedChoiceId;
 
-    return edge.selected === nextSelected ? edge : { ...edge, selected: nextSelected };
+    if (edge.selected === nextSelected) {
+      return edge;
+    }
+
+    hasChanges = true;
+    return { ...edge, selected: nextSelected };
   });
+
+  return hasChanges ? nextEdges : edges;
 }
 
 function getMiniMapNodeCategory(
@@ -248,6 +286,7 @@ export default function CanvasGraph({
 }: CanvasGraphProps) {
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [dragPreviewPositions, setDragPreviewPositions] = useState<Record<string, XYPosition>>({});
   const nodes = useEditorStore((state) => state.project.nodes);
   const globals = useEditorStore((state) => state.project.globals);
   const selection = useEditorStore((state) => state.selection);
@@ -313,15 +352,13 @@ export default function CanvasGraph({
       nodes
     ]
   );
-  const [canvasNodes, setCanvasNodes] = useState<Node[]>(projectNodes);
-
-  useEffect(() => {
-    setCanvasNodes(projectNodes);
-  }, [projectNodes]);
-
+  const dragPreviewNodes = useMemo(
+    () => applyDragPreviewToNodes(projectNodes, dragPreviewPositions),
+    [dragPreviewPositions, projectNodes]
+  );
   const selectedCanvasNodes = useMemo(
-    () => applySelectionToNodes(canvasNodes, selection),
-    [canvasNodes, selection]
+    () => applySelectionToNodes(dragPreviewNodes, selection),
+    [dragPreviewNodes, selection]
   );
 
   const projectEdges = useMemo<Edge[]>(
@@ -450,29 +487,38 @@ export default function CanvasGraph({
     );
   }, [connectChoice]);
 
-  const handleSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
-    const firstNode = selectedNodes[0];
-    const firstEdge = selectedEdges[0];
-
-    if (firstNode) {
-      setSelection({ type: "node", nodeId: firstNode.id });
-      return;
-    }
-
-    if (firstEdge) {
-      const parsed = parseEdgeId(firstEdge.id);
-      if (parsed) {
-        setSelection({ type: "choice", nodeId: parsed.nodeId, choiceId: parsed.choiceId });
-        return;
-      }
-    }
-  }, [setSelection]);
-
   const handlePaneClick = useCallback(() => {
     setSelection(null);
   }, [setSelection]);
 
+  const handleNodeDrag = useCallback((_: unknown, node: Node) => {
+    setDragPreviewPositions((current) => {
+      const existing = current[node.id];
+      if (existing && existing.x === node.position.x && existing.y === node.position.y) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [node.id]: {
+          x: node.position.x,
+          y: node.position.y
+        }
+      };
+    });
+  }, []);
+
   const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
+    setDragPreviewPositions((current) => {
+      if (!(node.id in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[node.id];
+      return next;
+    });
+
     const currentNodePosition = nodePositionsById.get(node.id);
     if (
       !currentNodePosition ||
@@ -483,9 +529,18 @@ export default function CanvasGraph({
     moveNode(node.id, node.position);
   }, [moveNode, nodePositionsById]);
 
-  const handleNodesChange = useCallback((changes: NodeChange[]) => {
-    setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
-  }, []);
+  useEffect(() => {
+    setDragPreviewPositions((current) => {
+      const activeNodeIds = new Set(nodes.map((node) => node.id));
+      const nextEntries = Object.entries(current).filter(([nodeId]) => activeNodeIds.has(nodeId));
+
+      if (nextEntries.length === Object.keys(current).length) {
+        return current;
+      }
+
+      return Object.fromEntries(nextEntries);
+    });
+  }, [nodes]);
 
   const handleEdgeClick = useCallback((_: unknown, edge: Edge) => {
     const parsed = parseEdgeId(edge.id);
@@ -582,11 +637,11 @@ export default function CanvasGraph({
         fitView
         deleteKeyCode={null}
         multiSelectionKeyCode={["Control", "Meta"]}
+        elementsSelectable={false}
         onInit={handleInit}
         onConnect={handleConnect}
-        onNodesChange={handleNodesChange}
         onPaneClick={handlePaneClick}
-        onSelectionChange={handleSelectionChange}
+        onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         onEdgeClick={handleEdgeClick}
         onEdgeDoubleClick={handleEdgeDoubleClick}
